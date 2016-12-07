@@ -65,7 +65,7 @@ fold_lines_1(Fun, Acc0, [Bin, Rest]) ->
 
 
 data_dir() ->
-    filename:dirname(code:where_is_file(?UCD_ZIP)).
+    code:priv_dir(unicodedata).
 
 
 data_files() ->
