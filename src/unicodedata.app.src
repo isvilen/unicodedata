@@ -1,0 +1,15 @@
+{application, unicodedata,
+ [{description, "Provides access to the Unicode Character Database (UCD)"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.
