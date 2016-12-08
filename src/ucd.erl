@@ -6,6 +6,7 @@
         , codepoint/1
         , codepoint_range/1
         , codepoint_or_range/1
+        , compact/1
         ]).
 
 -include_lib("stdlib/include/zip.hrl").
@@ -123,3 +124,51 @@ codepoint_or_range(Bin) ->
         [CP1, CP2] -> {codepoint(CP1), codepoint(CP2)};
         [CP]       -> codepoint(CP)
     end.
+
+
+compact([]) -> [];
+compact([H|T]) ->
+    case element(1, H) of
+        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2, H}]);
+        Cp         -> compact(T, [{Cp, Cp, [H]}])
+    end.
+
+compact([], Acc) ->
+    lists:foldl(fun ({Start, End, Vs}, Acc0) when is_list(Vs) ->
+                        [{Start, End, lists:reverse(Vs)} | Acc0];
+                    (V, Acc0) ->
+                        [V | Acc0]
+                end, [], Acc);
+
+compact([H|T], [{_, _, V} | _] = Acc) when is_tuple(V) ->
+    case element(1, H) of
+        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2, H} | Acc]);
+        Cp         -> compact(T, [{Cp, Cp, [H]} | Acc])
+    end;
+
+compact([H|T], [{Cp1, Cp2, Vs}=Range | Acc]) ->
+    case element(1, H) of
+        {NCp1, NCp2} ->
+            compact(T, [{NCp1, NCp2, H}, Range | Acc]);
+        Cp when Cp == Cp2 + 1 ->
+            compact(T, [{Cp1, Cp, [H|Vs]} | Acc]);
+        Cp ->
+            compact(T, [{Cp, Cp, [H]}, Range | Acc])
+    end.
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+compact_test_() -> [
+  ?_assertEqual([{0, 2, [{0, a}, {1, b}, {2, c}]}
+                ,{4, 10, {{4,10}, d}}
+                ,{15, 15, [{15, e}]}]
+               ,compact([{0, a}
+                        ,{1, b}
+                        ,{2, c}
+                        ,{{4,10}, d}
+                        ,{15, e}]))
+].
+
+-endif.

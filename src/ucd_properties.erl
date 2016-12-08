@@ -1,10 +1,20 @@
 -module(ucd_properties).
 -export([ data/0
+        , compact/2
+        , ranges/1
         ]).
 
 data() ->
     Data = ucd:fold_lines(fun data/2, "UnicodeData.txt", []),
     lists:reverse(Data).
+
+
+compact(What, Data) ->
+    ucd:compact(filter(What,Data)).
+
+
+ranges(Data) ->
+    [D || D <- Data, is_tuple(element(1,D))].
 
 
 data([Cp, Name | _] = Fields, Acc) ->
@@ -133,6 +143,26 @@ bidi_mirrored(<<"N">>) -> false.
 
 case_mapping(<<>>) -> undefined;
 case_mapping(Bin)  -> ucd:codepoint(Bin).
+
+
+filter(common_properties, Data) ->
+    [{Id, Name, Cat, Comb, Bidi, Mirrored}
+     || {Id,Name,Cat,Comb,Bidi,_,_,Mirrored,_,_,_} <- Data, is_integer(Id)];
+
+filter(decomposition, Data) ->
+    [{Id, Decomp} || {Id,_,_,_,_,Decomp,_,_,_,_,_} <- Data
+     , is_integer(Id)
+     , Decomp /= undefined];
+
+filter(numeric, Data) ->
+    [{Id, Numeric} || {Id,_,_,_,_,_,Numeric,_,_,_,_} <- Data
+     , is_integer(Id)
+     , Numeric /= undefined];
+
+filter(case_mapping, Data) ->
+    [{Id, Upper, Lower, Title} || {Id,_,_,_,_,_,_,_,Upper,Lower,Title} <- Data
+     , is_integer(Id)
+     , Upper /= undefined orelse Lower /= undefined orelse Title /= undefined].
 
 
 to_integer(Bin) -> list_to_integer(binary_to_list(Bin)).
