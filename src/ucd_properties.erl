@@ -2,6 +2,7 @@
 -export([ data/0
         , compact/2
         , ranges/1
+        , range_name/1
         , categories/0
         , category_name/1
         , bidi_classes/0
@@ -19,6 +20,36 @@ compact(What, Data) ->
 
 ranges(Data) ->
     [D || D <- Data, is_tuple(element(1,D))].
+
+
+range_name(Range) when is_tuple(Range) ->
+    range_name(element(2,Range));
+
+range_name(<<"CJK Ideograph">>) ->
+    cjk_ideograph;
+range_name(<<"CJK Ideograph Extension ",Rest/binary>>) ->
+    {cjk_ideograph, {extension, binary_to_list(Rest)}};
+
+range_name(<<"Private Use">>) ->
+    private_use;
+
+range_name(<<"Plane ",Id:2/binary," Private Use">>) ->
+    {private_use, {plane, list_to_integer(binary_to_list(Id))}};
+
+range_name(<<"Hangul Syllable">>) ->
+    hangul_syllable;
+
+range_name(<<"Tangut Ideograph">>) ->
+    tangut_ideograph;
+
+range_name(<<"Non Private Use High Surrogate">>) ->
+    {high_surrogate, non_private_use};
+
+range_name(<<"Private Use High Surrogate">>) ->
+    {high_surrogate, private_use};
+
+range_name(<<"Low Surrogate">>) ->
+    low_surrogate.
 
 
 categories() ->
