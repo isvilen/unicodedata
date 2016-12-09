@@ -1,5 +1,6 @@
 -module(ucd_codegen).
 -export([ index_fun_ast/2
+        , range_fun_ast/2
         , data_fun_ast/2
         ]).
 
@@ -36,6 +37,42 @@ index_fun_ast_1({[{Idx, From, To}], []}) ->
 index_fun_ast_1({L1, [{_, From, _}|_]=L2}) ->
     AST1 = index_fun_ast_1(split(L1)),
     AST2 = index_fun_ast_1(split(L2)),
+    ?Q(["if"
+       ,"  CP < _@From@ ->"
+       ,"    _@AST1;"
+       ,"  true ->"
+       ,"    _@AST2"
+       ,"end"]).
+
+
+range_fun_ast(Name, RangeValues) ->
+    AST = range_fun_ast_1(split(RangeValues)),
+    ?Q("'@Name@'(CP) -> _@AST.").
+
+range_fun_ast_1({[], []}) ->
+    ?Q("undefined");
+
+range_fun_ast_1({[{0, To, V}], []}) ->
+    ?Q(["if"
+       ,"  CP =< _@To@ -> _@V@;"
+       ,"  true        -> undefined"
+       ,"end"]);
+
+range_fun_ast_1({[{Id, Id, V}], []}) ->
+    ?Q(["if"
+       ,"  CP == _@Id@ -> _@V@;"
+       ,"  true        -> undefined"
+       ,"end"]);
+
+range_fun_ast_1({[{From, To, V}], []}) ->
+    ?Q(["if"
+       ,"  CP >= _@From@, CP =< _@To@ -> _@V@;"
+       ,"  true                       -> undefined"
+       ,"end"]);
+
+range_fun_ast_1({L1, [{From, _, _}|_]=L2}) ->
+    AST1 = range_fun_ast_1(split(L1)),
+    AST2 = range_fun_ast_1(split(L2)),
     ?Q(["if"
        ,"  CP < _@From@ ->"
        ,"    _@AST1;"
@@ -142,6 +179,20 @@ index_fun_ast_test_() ->
     ,?_assertEqual(8, ucd_index_funs:idx1(20))
     ,?_assertEqual(undefined, ucd_index_funs:idx1(5))
     ,?_assertEqual(undefined, ucd_index_funs:idx1(25))
+  ]}.
+
+range_fun_ast_test_() ->
+  Funs = [
+    ucd_codegen:range_fun_ast(range1,[{0,1,a}, {10,10,b}, {15,20,c}])
+  ],
+  {setup, fun() -> test_mod(ucd_range_funs, Funs) end, fun code:purge/1, [
+     ?_assertEqual(a, ucd_range_funs:range1(0))
+    ,?_assertEqual(a, ucd_range_funs:range1(1))
+    ,?_assertEqual(b, ucd_range_funs:range1(10))
+    ,?_assertEqual(c, ucd_range_funs:range1(15))
+    ,?_assertEqual(c, ucd_range_funs:range1(20))
+    ,?_assertEqual(undefined, ucd_range_funs:range1(5))
+    ,?_assertEqual(undefined, ucd_range_funs:range1(25))
   ]}.
 
 data_fun_ast_test_() ->
