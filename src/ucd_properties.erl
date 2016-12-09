@@ -2,6 +2,10 @@
 -export([ data/0
         , compact/2
         , ranges/1
+        , categories/0
+        , category_name/1
+        , bidi_classes/0
+        , bidi_class_name/1
         ]).
 
 data() ->
@@ -15,6 +19,90 @@ compact(What, Data) ->
 
 ranges(Data) ->
     [D || D <- Data, is_tuple(element(1,D))].
+
+
+categories() ->
+    ['Lu', 'Ll', 'Lt', 'Lm', 'Lo'
+    ,'Mn', 'Mc', 'Me'
+    ,'Nd', 'Nl', 'No'
+    ,'Pc', 'Pd', 'Ps', 'Pe', 'Pi', 'Pf', 'Po'
+    ,'Sm', 'Sc', 'Sk', 'So'
+    ,'Zs', 'Zl', 'Zp'
+    ,'Cc', 'Cf', 'Cs', 'Co', 'Cn'].
+
+
+category_name('Lu') -> uppercase_letter;
+category_name('Ll') -> lowercase_letter;
+category_name('Lt') -> titlecase_letter;
+
+category_name('Lm') -> modifier_letter;
+category_name('Lo') -> other_letter;
+
+category_name('Mn') -> monospacing_mark;
+category_name('Mc') -> spacing_mark;
+category_name('Me') -> enclosing_mark;
+
+category_name('Nd') -> decimal_number;
+category_name('Nl') -> letter_number;
+category_name('No') -> other_number;
+
+category_name('Pc') -> connector_punctuation;
+category_name('Pd') -> dash_punctuation;
+category_name('Ps') -> open_punctuation;
+category_name('Pe') -> close_punctuation;
+category_name('Pi') -> initial_punctuation;
+category_name('Pf') -> final_punctuation;
+category_name('Po') -> other_punctuation;
+
+category_name('Sm') -> math_symbol;
+category_name('Sc') -> currency_symbol;
+category_name('Sk') -> modifier_symbol;
+category_name('So') -> other_symbol;
+
+category_name('Zs') -> space_separator;
+category_name('Zl') -> line_separator;
+category_name('Zp') -> paragraph_separator;
+
+category_name('Cc') -> control;
+category_name('Cf') -> format;
+category_name('Cs') -> surrogate;
+category_name('Co') -> private_use;
+category_name('Cn') -> unassigned.
+
+
+bidi_classes() ->
+    ['L', 'R', 'AL'
+    ,'EN', 'ES', 'ET', 'AN', 'CS', 'NSM', 'BN'
+    ,'B', 'S', 'WS', 'ON'
+    ,'LRE', 'LRO', 'RLE', 'RLO', 'PDF', 'LRI', 'RLI', 'FSI', 'PDI'].
+
+
+bidi_class_name('L')   -> left_to_right;
+bidi_class_name('R')   -> right_to_left;
+bidi_class_name('AL')  -> arabic_letter;
+
+bidi_class_name('EN')  -> european_number;
+bidi_class_name('ES')  -> european_separator;
+bidi_class_name('ET')  -> european_terminator;
+bidi_class_name('AN')  -> arabic_number;
+bidi_class_name('CS')  -> common_separator;
+bidi_class_name('NSM') -> nonspacing_mark;
+bidi_class_name('BN')  -> boundary_neutral;
+
+bidi_class_name('B')  -> paragraph_separator;
+bidi_class_name('S')  -> segment_separator;
+bidi_class_name('WS') -> white_space;
+bidi_class_name('ON') -> other_neutral;
+
+bidi_class_name('LRE') -> left_to_right_embedding;
+bidi_class_name('LRO') -> left_to_right_override;
+bidi_class_name('RLE') -> right_to_left_embedding;
+bidi_class_name('RLO') -> right_to_left_override;
+bidi_class_name('PDF') -> pop_directional_format;
+bidi_class_name('LRI') -> left_to_right_isolate;
+bidi_class_name('RLI') -> right_to_left_isolate;
+bidi_class_name('FSI') -> first_strong_isolate;
+bidi_class_name('PDI') -> pop_directional_isolate.
 
 
 data([Cp, Name | _] = Fields, Acc) ->
@@ -58,7 +146,7 @@ data_range(Cp, Name, [H | T]) ->
 %% S    Symbol       Sm | Sc | Sk | So
 %% Z    Separator    Zs | Zl | Zp
 %% C    Other        Cc | Cf | Cs | Co | Cn
-category(Cat) -> erlang:binary_to_atom(Cat, latin1).
+category(Cat) -> erlang:binary_to_existing_atom(Cat, latin1).
 
 
 combining_class(CombClass) ->
@@ -91,7 +179,7 @@ combining_class(CombClass) ->
 %% Weak Types                EN  | ES  | ET  | AN  | CS  | NSM | BN
 %% Neutral Types             B   | S   | WS  | ON
 %% Explicit Formatting Types LRE | LRO | RLE | RLO | PDF | LRI | RLI | FSI | PDI
-bidi_class(BidiClass) -> erlang:binary_to_atom(BidiClass, latin1).
+bidi_class(BidiClass) -> erlang:binary_to_existing_atom(BidiClass, latin1).
 
 
 decomposition(<<>>) ->
