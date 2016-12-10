@@ -11,6 +11,9 @@
         , combining_class_data_fun_ast/1
         , combining_class_range_data_fun_ast/1
         , combining_class_fun_ast/0
+        , lowercase_mapping_funs_ast/1
+        , uppercase_mapping_funs_ast/1
+        , titlecase_mapping_funs_ast/1
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -161,6 +164,56 @@ combining_class_fun_ast() ->
        ,"  case ucd_properties_idx(CP) of"
        ,"    undefined -> ucd_combining_class_range_data(CP);"
        ,"    Idx       -> ucd_combining_class_data(Idx)"
+       ,"  end."]).
+
+
+lowercase_mapping_funs_ast(Data) ->
+    case_mapping_funs_ast(Data
+                         ,lowercase_mapping
+                         ,ucd_lowercase_mapping
+                         ,ucd_lowercase_mapping_idx
+                         ,ucd_lowercase_mapping_data).
+
+
+uppercase_mapping_funs_ast(Data) ->
+    case_mapping_funs_ast(Data
+                         ,uppercase_mapping
+                         ,ucd_uppercase_mapping
+                         ,ucd_uppercase_mapping_idx
+                         ,ucd_uppercase_mapping_data).
+
+titlecase_mapping_funs_ast(Data) ->
+    case_mapping_funs_ast(Data
+                         ,titlecase_mapping
+                         ,ucd_titlecase_mapping
+                         ,ucd_titlecase_mapping_idx
+                         ,ucd_titlecase_mapping_data).
+
+
+case_mapping_funs_ast(Data, Mapping, Name, IdxName, DataName) ->
+    MappingProperties = ucd_properties:compact(Mapping, Data),
+    [case_mapping_index_fun_ast(IdxName, MappingProperties)
+    ,case_mapping_data_fun_ast(DataName, MappingProperties)
+    ,case_mapping_fun_ast(Name, IdxName, DataName)].
+
+
+case_mapping_index_fun_ast(Name, MappingProperties) ->
+    Ranges = [{From,To} || {From,To,_} <- MappingProperties],
+    index_fun_ast(Name, Ranges).
+
+
+case_mapping_data_fun_ast(Name, MappingProperties) ->
+    Data = lists:flatmap(fun ({_, _, Vs}) -> [V || {_,V} <- Vs] end,
+                         MappingProperties),
+    Size = required_bits(lists:max(Data)),
+    data_fun_ast(Name, [<<V:Size>> || V <- Data]).
+
+
+case_mapping_fun_ast(Name, IdxName, DataName) ->
+    ?Q(["'@Name@'(CP) ->"
+       ,"  case '@IdxName@'(CP) of"
+       ,"    undefined -> undefined;"
+       ,"    Idx       -> '@DataName@'(Idx)"
        ,"  end."]).
 
 

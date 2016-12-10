@@ -278,10 +278,20 @@ filter(numeric, Data) ->
      , is_integer(Id)
      , Numeric /= undefined];
 
-filter(case_mapping, Data) ->
-    [{Id, Upper, Lower, Title} || {Id,_,_,_,_,_,_,_,Upper,Lower,Title} <- Data
+filter(uppercase_mapping, Data) ->
+    [{Id, Upper} || {Id,_,_,_,_,_,_,_,Upper,_,_} <- Data
      , is_integer(Id)
-     , Upper /= undefined orelse Lower /= undefined orelse Title /= undefined].
+     , Upper /= undefined];
+
+filter(lowercase_mapping, Data) ->
+    [{Id, Lower} || {Id,_,_,_,_,_,_,_,_,Lower,_} <- Data
+     , is_integer(Id)
+     , Lower /= undefined];
+
+filter(titlecase_mapping, Data) ->
+    [{Id, Title} || {Id,_,_,_,_,_,_,_,_,_,Title} <- Data
+     , is_integer(Id)
+     , Title /= undefined].
 
 
 to_integer(Bin) -> list_to_integer(binary_to_list(Bin)).
