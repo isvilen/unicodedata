@@ -7,6 +7,7 @@
         , category_name/1
         , bidi_classes/0
         , bidi_class_name/1
+        , bidi_class_defaults/0
         ]).
 
 data() ->
@@ -134,6 +135,25 @@ bidi_class_name('LRI') -> left_to_right_isolate;
 bidi_class_name('RLI') -> right_to_left_isolate;
 bidi_class_name('FSI') -> first_strong_isolate;
 bidi_class_name('PDI') -> pop_directional_isolate.
+
+
+%% default values for unassigned codepoints from DerivedBidiClass.txt
+bidi_class_defaults() ->
+    Ranges = [{16#0600, 16#07BF, 'AL'}
+             ,{16#08A0, 16#08FF, 'AL'}
+             ,{16#FB50, 16#FDCF, 'AL'}
+             ,{16#FDF0, 16#FDFF, 'AL'}
+             ,{16#FE70, 16#FEFF, 'AL'}
+             ,{16#1EE00, 16#1EEFF, 'AL'}
+             ,{16#0590, 16#05FF, 'R'}
+             ,{16#07C0, 16#089F, 'R'}
+             ,{16#FB1D, 16#FB4F, 'R'}
+             ,{16#10800, 16#10FFF, 'R'}
+             ,{16#1E800, 16#1EDFF, 'R'}
+             ,{16#1EF00, 16#1EFFF, 'R'}
+             ,{16#20A0, 16#20CF, 'ET'}
+             ],
+    lists:sort(fun ({_,V1,_}, {_,V2,_}) -> V1 =< V2 end, Ranges).
 
 
 data([Cp, Name | _] = Fields, Acc) ->

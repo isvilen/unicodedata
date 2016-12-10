@@ -11,6 +11,9 @@
         , combining_class_data_fun_ast/1
         , combining_class_range_data_fun_ast/1
         , combining_class_fun_ast/0
+        , bidi_class_data_fun_ast/1
+        , bidi_class_range_data_fun_ast/1
+        , bidi_class_fun_ast/0
         , lowercase_mapping_funs_ast/1
         , uppercase_mapping_funs_ast/1
         , titlecase_mapping_funs_ast/1
@@ -164,6 +167,39 @@ combining_class_fun_ast() ->
        ,"  case ucd_properties_idx(CP) of"
        ,"    undefined -> ucd_combining_class_range_data(CP);"
        ,"    Idx       -> ucd_combining_class_data(Idx)"
+       ,"  end."]).
+
+
+bidi_class_data_fun_ast(CommonProperties) ->
+    Classes = ucd_properties:bidi_classes(),
+    Names = [ucd_properties:bidi_class_name(C) || C <- Classes],
+    DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
+    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(5,V) || V <- Vs] end,
+                         CommonProperties),
+    Bits = encode_to_bits(Classes, Data),
+    data_fun_ast(ucd_bidi_class_data, Bits, DecodeASTFun).
+
+
+bidi_class_range_data_fun_ast(Ranges) ->
+    RangeValues = [{F,T,ucd_properties:bidi_class_name(C)}
+                   || {{F,T}, _,_,_,C,_,_,_,_,_,_} <- Ranges],
+    range_fun_ast(ucd_bidi_class_range_data, RangeValues).
+
+
+bidi_class_fun_ast() ->
+    RangeValues = [{F,T,ucd_properties:bidi_class_name(C)}
+                   || {F,T,C} <- ucd_properties:bidi_class_defaults()],
+    Default = ucd_properties:bidi_class_name('L'),
+    DefaultAST = range_fun_ast_1(split(RangeValues), ?Q("_@Default@")),
+    ?Q(["ucd_bidi_class(CP) ->"
+       ,"  case ucd_properties_idx(CP) of"
+       ,"    undefined ->"
+       ,"        case ucd_bidi_class_range_data(CP) of"
+       ,"            undefined ->"
+       ,"                _@DefaultAST;"
+       ,"            V -> V"
+       ,"        end;"
+       ,"    Idx       -> ucd_bidi_class_data(Idx)"
        ,"  end."]).
 
 
