@@ -14,6 +14,9 @@
         , bidi_class_data_fun_ast/1
         , bidi_class_range_data_fun_ast/1
         , bidi_class_fun_ast/0
+        , bidi_mirrored_data_fun_ast/1
+        , bidi_mirrored_range_data_fun_ast/1
+        , bidi_mirrored_fun_ast/0
         , lowercase_mapping_funs_ast/1
         , uppercase_mapping_funs_ast/1
         , titlecase_mapping_funs_ast/1
@@ -200,6 +203,29 @@ bidi_class_fun_ast() ->
        ,"            V -> V"
        ,"        end;"
        ,"    Idx       -> ucd_bidi_class_data(Idx)"
+       ,"  end."]).
+
+
+bidi_mirrored_data_fun_ast(CommonProperties) ->
+    Values = [false, true],
+    DecodeASTFun = fun (V) -> decode_value_case_ast(V, Values) end,
+    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(6,V) || V <- Vs] end,
+                         CommonProperties),
+    Bits = encode_to_bits(Values, Data),
+    data_fun_ast(ucd_bidi_mirrored_data, Bits, DecodeASTFun).
+
+
+bidi_mirrored_range_data_fun_ast(Ranges) ->
+    RangeValues = [{F,T,V}
+                   || {{F,T}, _,_,_,_,_,_,V,_,_,_} <- Ranges],
+    range_fun_ast(ucd_bidi_mirrored_range_data, RangeValues, ?Q("false")).
+
+
+bidi_mirrored_fun_ast() ->
+    ?Q(["ucd_bidi_mirrored(CP) ->"
+       ,"  case ucd_properties_idx(CP) of"
+       ,"    undefined -> ucd_bidi_mirrored_range_data(CP);"
+       ,"    Idx       -> ucd_bidi_mirrored_data(Idx)"
        ,"  end."]).
 
 
