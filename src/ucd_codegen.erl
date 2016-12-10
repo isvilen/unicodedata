@@ -1,8 +1,13 @@
 -module(ucd_codegen).
 -export([ index_fun_ast/2
         , range_fun_ast/2
+        , range_fun_ast/3
         , data_fun_ast/2
         , data_fun_ast/3
+        , common_properties_index_fun_ast/1
+        , category_data_fun_ast/1
+        , category_range_data_fun_ast/1
+        , category_fun_ast/0
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -47,33 +52,36 @@ index_fun_ast_1({L1, [{_, From, _}|_]=L2}) ->
 
 
 range_fun_ast(Name, RangeValues) ->
-    AST = range_fun_ast_1(split(RangeValues)),
+    range_fun_ast(Name, RangeValues, ?Q("undefined")).
+
+range_fun_ast(Name, RangeValues, DefaultAST) ->
+    AST = range_fun_ast_1(split(RangeValues), DefaultAST),
     ?Q("'@Name@'(CP) -> _@AST.").
 
-range_fun_ast_1({[], []}) ->
-    ?Q("undefined");
+range_fun_ast_1({[], []}, DefaultAST) ->
+    DefaultAST;
 
-range_fun_ast_1({[{0, To, V}], []}) ->
+range_fun_ast_1({[{0, To, V}], []}, DefaultAST) ->
     ?Q(["if"
        ,"  CP =< _@To@ -> _@V@;"
-       ,"  true        -> undefined"
+       ,"  true        -> _@DefaultAST"
        ,"end"]);
 
-range_fun_ast_1({[{Id, Id, V}], []}) ->
+range_fun_ast_1({[{Id, Id, V}], []}, DefaultAST) ->
     ?Q(["if"
        ,"  CP == _@Id@ -> _@V@;"
-       ,"  true        -> undefined"
+       ,"  true        -> _@DefaultAST"
        ,"end"]);
 
-range_fun_ast_1({[{From, To, V}], []}) ->
+range_fun_ast_1({[{From, To, V}], []}, DefaultAST) ->
     ?Q(["if"
        ,"  CP >= _@From@, CP =< _@To@ -> _@V@;"
-       ,"  true                       -> undefined"
+       ,"  true                       -> _@DefaultAST"
        ,"end"]);
 
-range_fun_ast_1({L1, [{From, _, _}|_]=L2}) ->
-    AST1 = range_fun_ast_1(split(L1)),
-    AST2 = range_fun_ast_1(split(L2)),
+range_fun_ast_1({L1, [{From, _, _}|_]=L2}, DefaultAST) ->
+    AST1 = range_fun_ast_1(split(L1), DefaultAST),
+    AST2 = range_fun_ast_1(split(L2), DefaultAST),
     ?Q(["if"
        ,"  CP < _@From@ ->"
        ,"    _@AST1;"
@@ -104,6 +112,44 @@ data_fun_ast(Name, Items, ResultASTFun) ->
        ]).
 
 
+common_properties_index_fun_ast(CommonProperties) ->
+    Ranges = [{From,To} || {From,To,_} <- CommonProperties],
+    index_fun_ast(ucd_properties_idx, Ranges).
+
+
+category_data_fun_ast(CommonProperties) ->
+    Categories = ucd_properties:categories(),
+    Names = [ucd_properties:category_name(C) || C <- Categories],
+    DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
+    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(3,V) || V <- Vs] end,
+                         CommonProperties),
+    Bits = encode_to_bits(Categories, Data),
+    data_fun_ast(ucd_category_data, Bits, DecodeASTFun).
+
+
+category_range_data_fun_ast(Ranges) ->
+    RangeValues = [{F,T,ucd_properties:category_name(C)}
+                   || {{F,T}, _,C,_,_,_,_,_,_,_,_} <- Ranges],
+    Default = ucd_properties:category_name('Cn'),
+    range_fun_ast(ucd_category_range_data, RangeValues, ?Q("_@Default@")).
+
+
+category_fun_ast() ->
+    ?Q(["ucd_category(CP) ->"
+       ,"  case ucd_properties_idx(CP) of"
+       ,"    undefined -> ucd_category_range_data(CP);"
+       ,"    Idx       -> ucd_category_data(Idx)"
+       ,"  end."]).
+
+
+decode_value_case_ast(ValueAST, Values) ->
+    Cases = [?Q("_@V@ -> _@R@") || {R,V} <- enum_values(Values)],
+    ?Q(["case _@ValueAST of"
+       ," _ -> _@_@Cases"
+       ,"end"
+       ]).
+
+
 index(Ranges) -> index(Ranges, 0, []).
 
 index([], _, Acc) ->
@@ -125,6 +171,12 @@ split(L1, [H|T], [_,_|R]) ->
     split([H | L1], T, R).
 
 
+encode_to_bits(Types, Data) ->
+    Map = maps:from_list(enum_values(Types)),
+    BitsSize = required_bits(maps:size(Map)),
+    [begin V = maps:get(T,Map), <<V:BitsSize>> end || T <- Data].
+
+
 concat_bits([V|_]=Vs) ->
     {BitsData, N} = lists:foldr(fun(B1,{B0,C}) ->
                                    {<<B1/bitstring,B0/bitstring>>, C+1}
@@ -137,11 +189,25 @@ concat_bits([V|_]=Vs) ->
     {BytesData, BitsSize}.
 
 
+required_bits(N) when is_integer(N), N > 1 ->
+    Bits = math:log2(N),
+    T = trunc(Bits),
+    case Bits - T == 0 of
+        true  -> T;
+        false -> T + 1
+    end.
+
+
 round_to_bytes(Bits) ->
     case Bits rem 8 of
         0 -> (Bits div 8);
         _ -> (Bits div 8) + 1
     end.
+
+
+enum_values(Values) ->
+    Size = length(Values),
+    lists:zip(Values,lists:seq(0,Size-1)).
 
 
 -ifdef(TEST).
@@ -163,8 +229,20 @@ split_test_() -> [
  ,?_assertEqual({[a,b,c], [d,e]}, split([a,b,c,d,e]))
 ].
 
+encode_to_bits_test_() -> [
+  ?_assertEqual([<<0:3>>, <<1:3>>, <<0:3>>, <<3:3>>, <<2:3>>],
+                encode_to_bits([a,b,c,d,e,f], [a, b, a, d, c]))
+].
+
 concat_bits_test_() -> [
   ?_assertEqual({<<1:5,2:5,0:6>>, 5}, concat_bits([<<1:5>>,<<2:5>>]))
+].
+
+required_bits_test_() -> [
+  ?_assertEqual(1, required_bits(2))
+ ,?_assertEqual(5, required_bits(31))
+ ,?_assertEqual(5, required_bits(32))
+ ,?_assertEqual(16, required_bits(40000))
 ].
 
 round_to_bytes_test_() -> [
@@ -190,6 +268,7 @@ index_fun_ast_test_() ->
 range_fun_ast_test_() ->
   Funs = [
     ucd_codegen:range_fun_ast(range1,[{0,1,a}, {10,10,b}, {15,20,c}])
+   ,ucd_codegen:range_fun_ast(range2,[{15,20,c}], ?Q("default"))
   ],
   {setup, fun() -> test_mod(ucd_range_funs, Funs) end, fun code:purge/1, [
      ?_assertEqual(a, ucd_range_funs:range1(0))
@@ -199,6 +278,10 @@ range_fun_ast_test_() ->
     ,?_assertEqual(c, ucd_range_funs:range1(20))
     ,?_assertEqual(undefined, ucd_range_funs:range1(5))
     ,?_assertEqual(undefined, ucd_range_funs:range1(25))
+
+    ,?_assertEqual(c, ucd_range_funs:range2(18))
+    ,?_assertEqual(default, ucd_range_funs:range2(5))
+    ,?_assertEqual(default, ucd_range_funs:range2(25))
   ]}.
 
 data_fun_ast_test_() ->
@@ -206,6 +289,8 @@ data_fun_ast_test_() ->
     ucd_codegen:data_fun_ast(f5,[<<1:5>>, <<2:5>>, <<3:5>>, <<4:5>>])
    ,ucd_codegen:data_fun_ast(f8,[<<1:8>>, <<2:8>>, <<3:8>>, <<4:8>>])
    ,ucd_codegen:data_fun_ast(f14,[<<1:14>>, <<2:14>>, <<3:14>>, <<4:14>>])
+   ,ucd_codegen:data_fun_ast(fv,[<<1:5>>, <<2:5>>, <<0:5>>],
+                             fun (V) -> decode_value_case_ast(V, [a,b,c,d]) end)
   ],
   {setup, fun() -> test_mod(ucd_data_funs, Funs) end, fun code:purge/1, [
      ?_assertEqual(1, ucd_data_funs:f5(0))
@@ -219,6 +304,10 @@ data_fun_ast_test_() ->
     ,?_assertEqual(1, ucd_data_funs:f14(0))
     ,?_assertEqual(2, ucd_data_funs:f14(1))
     ,?_assertEqual(4, ucd_data_funs:f14(3))
+
+    ,?_assertEqual(b, ucd_data_funs:fv(0))
+    ,?_assertEqual(c, ucd_data_funs:fv(1))
+    ,?_assertEqual(a, ucd_data_funs:fv(2))
   ]}.
 
 
