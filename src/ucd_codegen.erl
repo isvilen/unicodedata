@@ -8,6 +8,9 @@
         , category_data_fun_ast/1
         , category_range_data_fun_ast/1
         , category_fun_ast/0
+        , combining_class_data_fun_ast/1
+        , combining_class_range_data_fun_ast/1
+        , combining_class_fun_ast/0
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -139,6 +142,25 @@ category_fun_ast() ->
        ,"  case ucd_properties_idx(CP) of"
        ,"    undefined -> ucd_category_range_data(CP);"
        ,"    Idx       -> ucd_category_data(Idx)"
+       ,"  end."]).
+
+
+combining_class_data_fun_ast(CommonProperties) ->
+    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(4,V) || V <- Vs] end,
+                         CommonProperties),
+    data_fun_ast(ucd_combining_class_data, [<<V>> || V <- Data]).
+
+
+combining_class_range_data_fun_ast(Ranges) ->
+    RangeValues = [{F,T,CC} || {{F,T}, _,_,CC,_,_,_,_,_,_,_} <- Ranges],
+    range_fun_ast(ucd_combining_class_range_data, RangeValues, ?Q("0")).
+
+
+combining_class_fun_ast() ->
+    ?Q(["ucd_combining_class(CP) ->"
+       ,"  case ucd_properties_idx(CP) of"
+       ,"    undefined -> ucd_combining_class_range_data(CP);"
+       ,"    Idx       -> ucd_combining_class_data(Idx)"
        ,"  end."]).
 
 
