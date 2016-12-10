@@ -2,6 +2,7 @@
 -export([ index_fun_ast/2
         , range_fun_ast/2
         , data_fun_ast/2
+        , data_fun_ast/3
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -82,18 +83,23 @@ range_fun_ast_1({L1, [{From, _, _}|_]=L2}) ->
 
 
 data_fun_ast(Name, Items) ->
+    data_fun_ast(Name, Items, fun (V) -> V end).
+
+data_fun_ast(Name, Items, ResultASTFun) ->
+    ResultAST = ResultASTFun(?Q("V")),
     {Data, BitsSize} = concat_bits(Items),
     ByteSize = round_to_bytes(BitsSize),
     ByteSize1 = ByteSize + 1,
+    RemBits = BitsSize rem 8,
     ?Q(["'@Name@'(Index) ->"
        ,"    BitIdx = Index * _@BitsSize@,"
        ,"    Pos = BitIdx div 8,"
        ,"    Offset = BitIdx - (Pos * 8),"
-       ,"    Len = if ((Offset + _@BitsSize@) rem 8) == 0 -> _@ByteSize@;"
-       ,"             true                                -> _@ByteSize1@"
+       ,"    Len = if Offset + _@RemBits@ > 8 -> _@ByteSize1@;"
+       ,"             true                    -> _@ByteSize@"
        ,"          end,"
        ,"    case binary:part(_@Data@, Pos, Len) of"
-       ,"        <<_:Offset,V:_@BitsSize@,_/bits>> -> V"
+       ,"        <<_:Offset,V:_@BitsSize@,_/bits>> -> _@ResultAST"
        ,"    end."
        ]).
 
