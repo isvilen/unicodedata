@@ -20,6 +20,7 @@
         , lowercase_mapping_funs_ast/1
         , uppercase_mapping_funs_ast/1
         , titlecase_mapping_funs_ast/1
+        , numeric_funs_ast/2
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -279,12 +280,69 @@ case_mapping_fun_ast(Name, IdxName, DataName) ->
        ,"  end."]).
 
 
+numeric_funs_ast(Data, ExtraValues) ->
+    NumericProperties = ucd_properties:compact(numeric, Data),
+    [numeric_index_fun_ast(NumericProperties)
+    ,numeric_data_fun_ast(NumericProperties)
+    ,numeric_fun_ast(ExtraValues)
+    ].
+
+numeric_index_fun_ast(NumericProperties) ->
+    Ranges = [{From,To} || {From,To,_} <- NumericProperties],
+    index_fun_ast(ucd_numeric_idx, Ranges).
+
+
+numeric_data_fun_ast(NumericProperties) ->
+    Numerics = lists:flatmap(fun({_,_,Vs}) -> [V || {_,V} <- Vs] end
+                            ,NumericProperties),
+    Data = list_to_tuple(Numerics),
+    ?Q(["ucd_numeric_data(Index) ->"
+        "    element(Index + 1, _@Data@)."
+       ]).
+
+numeric_fun_ast(ExtraValues) ->
+    DefaultAST = binary_search_ast(ExtraValues, ?Q("undefined")),
+    ?Q(["ucd_numeric(CP) ->"
+       ," case ucd_numeric_idx(CP) of"
+       ,"    undefined ->"
+       ,"       _@DefaultAST;"
+       ,"    Idx ->"
+       ,"        ucd_numeric_data(Idx)"
+       ," end."
+       ]).
+
+
 decode_value_case_ast(ValueAST, Values) ->
     Cases = [?Q("_@V@ -> _@R@") || {R,V} <- enum_values(Values)],
     ?Q(["case _@ValueAST of"
        ," _ -> _@_@Cases"
        ,"end"
        ]).
+
+
+binary_search_ast(Values, DefaultAST) ->
+    binary_search_ast_1(split(Values), DefaultAST).
+
+binary_search_ast_1({[], []}, DefaultAST) ->
+    DefaultAST;
+
+binary_search_ast_1({[{K, V}], []}, DefaultAST) ->
+    ?Q(["if"
+       ,"  CP == _@K@ -> _@V@;"
+       ,"  true       -> _@DefaultAST"
+       ,"end"]);
+
+binary_search_ast_1({L1, [{K, V}|_]=L2}, DefaultAST) ->
+    AST1 = binary_search_ast_1(split(L1), DefaultAST),
+    AST2 = binary_search_ast_1(split(L2), DefaultAST),
+    ?Q(["if"
+       ,"  CP == _@K@ ->"
+       ,"    _@V@;"
+       ,"  CP < _@K@ ->"
+       ,"    _@AST1;"
+       ,"  true ->"
+       ,"    _@AST2"
+       ,"end"]).
 
 
 index(Ranges) -> index(Ranges, 0, []).
@@ -445,6 +503,19 @@ data_fun_ast_test_() ->
     ,?_assertEqual(b, ucd_data_funs:fv(0))
     ,?_assertEqual(c, ucd_data_funs:fv(1))
     ,?_assertEqual(a, ucd_data_funs:fv(2))
+  ]}.
+
+binary_search_ast_test_() ->
+  S1 = binary_search_ast([{0,a}, {10,b}, {15,c}], ?Q("default")),
+  Funs = [
+    ?Q("f1(CP) -> _@S1.")
+  ],
+  {setup, fun() -> test_mod(ucd_binary_search, Funs) end, fun code:purge/1, [
+     ?_assertEqual(a, ucd_binary_search:f1(0))
+    ,?_assertEqual(b, ucd_binary_search:f1(10))
+    ,?_assertEqual(c, ucd_binary_search:f1(15))
+    ,?_assertEqual(default, ucd_binary_search:f1(5))
+    ,?_assertEqual(default, ucd_binary_search:f1(25))
   ]}.
 
 
