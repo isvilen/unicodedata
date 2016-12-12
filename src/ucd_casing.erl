@@ -4,17 +4,11 @@
         ]).
 
 case_folding() ->
-    Data = ucd:fold_lines(fun (L, Acc) -> [case_folding_data(L) | Acc] end
-                         ,"CaseFolding.txt"
-                         ,[]),
-    lists:reverse(Data).
+    ucd:fold_lines(fun case_folding_data/1, "CaseFolding.txt").
 
 
 special_casing() ->
-    Data = ucd:fold_lines(fun (L, Acc) -> [special_casing_data(L) | Acc] end
-                         ,"SpecialCasing.txt"
-                         ,[]),
-    lists:reverse(Data).
+    ucd:fold_lines(fun special_casing_data/1, "SpecialCasing.txt").
 
 
 case_folding_data([Cp, <<"C">>, Mapping, <<>>]) ->
@@ -24,7 +18,7 @@ case_folding_data([Cp, <<"S">>, Mapping, <<>>]) ->
     {ucd:codepoint(Cp), simple, ucd:codepoint(Mapping)};
 
 case_folding_data([Cp, <<"F">>, Mappings, <<>>]) ->
-    {ucd:codepoint(Cp), full, codepoints(Mappings)};
+    {ucd:codepoint(Cp), full, ucd:codepoints(Mappings)};
 
 case_folding_data([Cp, <<"T">>, Mapping, <<>>]) ->
     {ucd:codepoint(Cp), turkic, ucd:codepoint(Mapping)}.
@@ -40,14 +34,8 @@ special_casing_data([CP, Lower, Title, Upper, <<>>]) ->
 
 special_casing_data(CP, Lower, Title, Upper, Conditions) ->
     {ucd:codepoint(CP)
-    ,codepoints(Lower), codepoints(Title), codepoints(Upper)
+    ,ucd:codepoints(Lower), ucd:codepoints(Title), ucd:codepoints(Upper)
     ,Conditions}.
-
-
-codepoints(<<>>) ->
-    [];
-codepoints(Cps) ->
-    [ucd:codepoint(Cp) || Cp <- binary:split(Cps, <<" ">>, [global])].
 
 
 casing_context(<<"Final_Sigma">>)       -> final_sigma;

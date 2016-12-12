@@ -1,12 +1,16 @@
 -module(ucd).
 -export([ files/0
         , file/1
+        , fold_lines/2
         , fold_lines/3
         , fold_lines/4
         , codepoint/1
         , codepoint_range/1
         , codepoint_or_range/1
+        , codepoints/1
         , compact/1
+        , sort_by_codepoints/1
+        , to_integer/1
         ]).
 
 -include_lib("stdlib/include/zip.hrl").
@@ -24,6 +28,11 @@ file(FileName) ->
         {ok, [{_, Data}]} -> Data;
         _                 -> error(badarg)
     end.
+
+
+fold_lines(Fun, FileName) ->
+    Acc1 = fold_lines(fun (L,Acc) -> [Fun(L) | Acc] end, FileName, []),
+    lists:reverse(Acc1).
 
 
 fold_lines(Fun, FileName, Acc) ->
@@ -107,8 +116,15 @@ codepoint(<<"U+",Bin/binary>>) ->
 
 codepoint(Bin) ->
     case io_lib:fread("~16u", binary_to_list(Bin)) of
-        {ok,[V],[]} -> V;
-        _           -> error({badarg, Bin})
+        {ok,[V],[]} ->
+            V;
+        {ok,[V],Sp} ->
+            case lists:any(fun(Ch) -> Ch /= $\s end, Sp) of
+                true  -> error({badarg, Bin});
+                false -> V
+            end;
+        _ ->
+            error({badarg, Bin})
     end.
 
 
@@ -124,6 +140,14 @@ codepoint_or_range(Bin) ->
         [CP1, CP2] -> {codepoint(CP1), codepoint(CP2)};
         [CP]       -> codepoint(CP)
     end.
+
+
+codepoints(<<>>) ->
+    [];
+codepoints(Cps) ->
+    [codepoint(Cp) || Cp <- binary:split(Cps, <<" ">>, [global])
+                     ,Cp /= <<>>].
+
 
 
 compact([]) -> [];
@@ -157,6 +181,20 @@ compact([H|T], [{Cp1, Cp2, Vs}=Range | Acc]) ->
     end.
 
 
+sort_by_codepoints(Data) -> lists:sort(fun compare_codepoints/2, Data).
+
+compare_codepoints(V1, V2) ->
+    compare_codepoints_1(element(1,V1), element(1, V2)).
+
+compare_codepoints_1({_,C1}, {C2,_}) -> C1 =< C2;
+compare_codepoints_1({_,C1}, C2)     -> C1 =< C2;
+compare_codepoints_1(C1, {C2,_})     -> C1 =< C2;
+compare_codepoints_1(C1, C2)         -> C1 =< C2.
+
+
+to_integer(V) -> list_to_integer(binary_to_list(V)).
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -169,6 +207,21 @@ compact_test_() -> [
                         ,{2, c}
                         ,{{4,10}, d}
                         ,{15, e}]))
+].
+
+sort_by_codepoints_test_() -> [
+  ?_assertEqual([{0, a}
+                ,{1, b}
+                ,{2, c}
+                ,{{4,6}, d}
+                ,{{8,10}, e}
+                ,{15, f}]
+               ,sort_by_codepoints([{{8,10}, e}
+                                   ,{15, f}
+                                   ,{1, b}
+                                   ,{{4,6}, d}
+                                   ,{0, a}
+                                   ,{2, c}]))
 ].
 
 -endif.

@@ -8,10 +8,7 @@
 
 
 blocks() ->
-    Data = ucd:fold_lines(fun (L, Acc) -> [block_data(L) | Acc] end
-                         ,"Blocks.txt"
-                         ,[]),
-    lists:reverse(Data).
+    ucd:fold_lines(fun block_data/1, "Blocks.txt").
 
 
 aliases() ->
@@ -19,7 +16,7 @@ aliases() ->
                          ,"NameAliases.txt"
                          ,#{}),
     Data1 = [{K, lists:reverse(Vs)} || {K, Vs} <- maps:to_list(Data)],
-    lists:sort(fun ({C1,_}, {C2,_}) -> C1 =< C2 end, Data1).
+    ucd:sort_by_codepoints(Data1).
 
 
 aliases(Aliases, Type) ->
@@ -37,10 +34,7 @@ aliases_types() -> [correction, control, alternate, figment, abbreviation].
 
 
 sequences() ->
-    Data = ucd:fold_lines(fun (L, Acc) -> [sequence_data(L) | Acc] end
-                         ,"NamedSequences.txt"
-                         ,[]),
-    lists:reverse(Data).
+    ucd:fold_lines(fun sequence_data/1, "NamedSequences.txt").
 
 
 block_data([CpOrRange, Name]) -> {ucd:codepoint_or_range(CpOrRange), Name}.
@@ -61,4 +55,4 @@ alias_type(<<"abbreviation">>) -> abbreviation.
 
 
 sequence_data([Name, Cps]) ->
-    {Name, [ucd:codepoint(Cp) || Cp <- binary:split(Cps, <<" ">>, [global])]}.
+    {Name, ucd:codepoints(Cps)}.

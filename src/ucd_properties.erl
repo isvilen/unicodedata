@@ -201,28 +201,28 @@ category(Cat) -> erlang:binary_to_existing_atom(Cat, latin1).
 
 
 combining_class(CombClass) ->
-    case string:to_integer(binary_to_list(CombClass)) of
-        {V, []} when V == 0
-                   ; V == 1
-                   ; V == 7
-                   ; V == 8
-                   ; V == 9
-                   ; V >= 10, V =< 133
-                   ; V == 200
-                   ; V == 202
-                   ; V == 214
-                   ; V == 216
-                   ; V == 218
-                   ; V == 220
-                   ; V == 222
-                   ; V == 224
-                   ; V == 226
-                   ; V == 228
-                   ; V == 230
-                   ; V == 232
-                   ; V == 233
-                   ; V == 234
-                   ; V == 240 -> V
+    case ucd:to_integer(CombClass) of
+        V when V == 0
+             ; V == 1
+             ; V == 7
+             ; V == 8
+             ; V == 9
+             ; V >= 10, V =< 133
+             ; V == 200
+             ; V == 202
+             ; V == 214
+             ; V == 216
+             ; V == 218
+             ; V == 220
+             ; V == 222
+             ; V == 224
+             ; V == 226
+             ; V == 228
+             ; V == 230
+             ; V == 232
+             ; V == 233
+             ; V == 234
+             ; V == 240 -> V
     end.
 
 
@@ -264,8 +264,8 @@ numeric(<<>>, <<>>, <<>>) ->
 
 numeric(<<>>, <<>>, Numeric) ->
     Value = case binary:split(Numeric, <<"/">>) of
-                [N1,N2] -> {to_integer(N1), to_integer(N2)};
-                [N]     -> to_integer(N)
+                [N1,N2] -> {ucd:to_integer(N1), ucd:to_integer(N2)};
+                [N]     -> ucd:to_integer(N)
             end,
     {numeric, Value};
 
@@ -312,6 +312,3 @@ filter(titlecase_mapping, Data) ->
     [{Id, Title} || {Id,_,_,_,_,_,_,_,_,_,Title} <- Data
      , is_integer(Id)
      , Title /= undefined].
-
-
-to_integer(Bin) -> list_to_integer(binary_to_list(Bin)).
