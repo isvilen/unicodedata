@@ -21,6 +21,10 @@
         , uppercase_mapping_funs_ast/1
         , titlecase_mapping_funs_ast/1
         , numeric_funs_ast/2
+        , nfd_quick_check_fun_ast/1
+        , nfc_quick_check_fun_ast/1
+        , nfkd_quick_check_fun_ast/1
+        , nfkc_quick_check_fun_ast/1
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -310,6 +314,34 @@ numeric_fun_ast(ExtraValues) ->
        ,"        ucd_numeric_data(Idx)"
        ," end."
        ]).
+
+
+nfd_quick_check_fun_ast(NormalizationProperties) ->
+    Data = ucd_normalization:nfd_quick_check_no(NormalizationProperties),
+    normalization_quickcheck_fun_ast(ucd_nfd_quickcheck, [{V,no} || V <- Data]).
+
+
+nfc_quick_check_fun_ast(NormalizationProperties) ->
+    Data = ucd_normalization:nfc_quick_check(NormalizationProperties),
+    normalization_quickcheck_fun_ast(ucd_nfc_quickcheck, Data).
+
+
+nfkd_quick_check_fun_ast(NormalizationProperties) ->
+    Data = ucd_normalization:nfkd_quick_check_no(NormalizationProperties),
+    normalization_quickcheck_fun_ast(ucd_nfkd_quickcheck, [{V,no} || V <- Data]).
+
+
+nfkc_quick_check_fun_ast(NormalizationProperties) ->
+    Data = ucd_normalization:nfkc_quick_check(NormalizationProperties),
+    normalization_quickcheck_fun_ast(ucd_nfkc_quickcheck, Data).
+
+
+normalization_quickcheck_fun_ast(Name, Data) ->
+    Rs = [case V of
+              {{F,T},R} -> {F,T,R};
+              {Cp, R}   -> {Cp, Cp, R}
+          end || V <- Data],
+    range_fun_ast(Name, Rs, ?Q("yes")).
 
 
 decode_value_case_ast(ValueAST, Values) ->
