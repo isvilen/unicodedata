@@ -40,6 +40,7 @@ forms(Funs) ->
     State = #{ data => undefined
              , common_properties => undefined
              , ranges => undefined
+             , blocks => undefined
              , generated_functions => sets:new()
              },
     {Forms, _} = lists:mapfoldl(fun forms/2, State, Funs),
@@ -54,6 +55,15 @@ forms({ucd_category, 1}, State0) ->
             , ucd_codegen:category_fun_ast()
             ],
     ensure_common_properties_index(Forms, State2);
+
+forms({ucd_blocks, 0}, State0) ->
+    {Blocks, State1} = blocks_data(State0),
+    Data = [{Block, Range} || {Range, Block} <- Blocks],
+    {[?Q("ucd_blocks() -> _@Data@.")], State1};
+
+forms({ucd_block, 1}, State0) ->
+    {Blocks, State1} = blocks_data(State0),
+    {[ucd_codegen:block_fun_ast(Blocks)], State1};
 
 forms(_, State) ->
     {[], State}.
@@ -102,3 +112,11 @@ ranges_data(#{ranges := undefined}=State0) ->
 
 ranges_data(#{ranges := Ranges}=State) ->
     {Ranges, State}.
+
+
+blocks_data(#{blocks := undefined}=State) ->
+    Blocks = ucd_names:blocks(),
+    {Blocks, State#{blocks := Blocks}};
+
+blocks_data(#{blocks := Blocks}=State) ->
+    {Blocks, State}.

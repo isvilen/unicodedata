@@ -25,6 +25,7 @@
         , nfc_quick_check_fun_ast/1
         , nfkd_quick_check_fun_ast/1
         , nfkc_quick_check_fun_ast/1
+        , block_fun_ast/1
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -342,6 +343,11 @@ normalization_quickcheck_fun_ast(Name, Data) ->
               {Cp, R}   -> {Cp, Cp, R}
           end || V <- Data],
     range_fun_ast(Name, Rs, ?Q("yes")).
+
+
+block_fun_ast(Blocks) ->
+    RangeValues = [{F,T,V} || {{F,T}, V} <- Blocks],
+    range_fun_ast(ucd_block, RangeValues, ?Q("no_block")).
 
 
 decode_value_case_ast(ValueAST, Values) ->

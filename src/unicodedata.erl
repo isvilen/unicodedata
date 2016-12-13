@@ -11,6 +11,9 @@
         , is_other/1
         , is_noncharacter/1
         , is_reserved/1
+        , blocks/0
+        , block/1
+        , codepoint_block/1
         ]).
 
 -type category() :: uppercase_letter
@@ -153,6 +156,39 @@ is_reserved(CP) ->
     end.
 
 
+-spec blocks() -> [{binary(), {char(), char()}}].
+blocks() -> ucd_blocks().
+
+
+-spec block(Name) -> {char(), char()} | no_block
+      when Name :: binary() | string().
+block(Name) when is_binary(Name) ->
+    case lists:keyfind(Name, 1, blocks()) of
+        {_, Range} -> Range;
+        false      -> block(binary_to_list(Name))
+    end;
+
+block(Name) ->
+    block(normalize_block_name(Name), blocks()).
+
+block(_, []) ->
+    no_block;
+
+block(Name, [{Block, Range} | Blocks]) ->
+    case normalize_block_name(binary_to_list(Block)) of
+        Name -> Range;
+        _    -> block(Name, Blocks)
+    end.
+
+
+-spec codepoint_block(char()) -> binary() | no_block.
+codepoint_block(CP) -> ucd_block(CP).
+
+
+normalize_block_name(Name) ->
+    string:to_lower([C || C <- Name, C /= $\s, C /= $-, C /= $_]).
+
+
 -ifdef(TEST).
 -compile({no_auto_import,[is_number/1]}).
 -include_lib("eunit/include/eunit.hrl").
@@ -246,6 +282,30 @@ category_test_() -> [
    ,?_assert(is_noncharacter(16#10FFFF))
 
    ,?_assert(is_reserved(16#E00FF))
+].
+
+blocks_test_() -> [
+    ?_assertMatch([{<<"Basic Latin">>, {0,127}} | _], blocks())
+   ,?_assertEqual({0,127}, block(<<"Basic Latin">>))
+   ,?_assertEqual({16#100, 16#017F}, block("latin extended a"))
+   ,?_assertEqual(no_block, block(<<"">>))
+].
+
+codepoint_block_test_() -> [
+    ?_assertEqual(<<"Basic Latin">>,        codepoint_block(7))
+   ,?_assertEqual(<<"Cyrillic">>,           codepoint_block(1029))
+   ,?_assertEqual(<<"Letterlike Symbols">>, codepoint_block(8472))
+   ,?_assertEqual(<<"Yi Syllables">>,       codepoint_block(41287))
+   ,?_assertEqual(<<"Hangul Syllables">>,   codepoint_block(44032))
+   ,?_assertEqual(<<"Variation Selectors">>,codepoint_block(65024))
+   ,?_assertEqual(<<"Multani">>,            codepoint_block(70277))
+   ,?_assertEqual(<<"CJK Unified Ideographs Extension B">>
+                 ,codepoint_block(131072))
+
+   ,?_assertEqual(<<"Low Surrogates">>,   codepoint_block(16#dc00))
+   ,?_assertEqual(<<"Private Use Area">>, codepoint_block(16#e000))
+
+   ,?_assertEqual(no_block, codepoint_block(16#E00FF))
 ].
 
 -endif.
