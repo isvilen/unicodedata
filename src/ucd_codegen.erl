@@ -26,6 +26,7 @@
         , nfkd_quick_check_fun_ast/1
         , nfkc_quick_check_fun_ast/1
         , block_fun_ast/1
+        , codepoint_range_fun_ast/1
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -348,6 +349,16 @@ normalization_quickcheck_fun_ast(Name, Data) ->
 block_fun_ast(Blocks) ->
     RangeValues = [{F,T,V} || {{F,T}, V} <- Blocks],
     range_fun_ast(ucd_block, RangeValues, ?Q("no_block")).
+
+
+codepoint_range_fun_ast(Ranges) ->
+    RangeValues = [codepoint_range_value(R) || R <- Ranges],
+    range_fun_ast(ucd_range, RangeValues).
+
+codepoint_range_value(Range) ->
+    {From, To} = element(1, Range),
+    Name = ucd_properties:range_name(element(2, Range)),
+    {From, To, Name}.
 
 
 decode_value_case_ast(ValueAST, Values) ->
