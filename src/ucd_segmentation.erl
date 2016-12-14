@@ -1,6 +1,6 @@
 -module(ucd_segmentation).
 -export([ grapheme_breaks/0
-        , grapheme_breaks_classes/0
+        , grapheme_break_classes/0
         , word_breaks/0
         , word_break_classes/0
         , sentence_breaks/0
@@ -17,7 +17,7 @@ grapheme_breaks() ->
     Data = ucd:fold_lines(fun grapheme_break/1, "GraphemeBreakProperty.txt"),
     ucd:sort_by_codepoints(Data).
 
-grapheme_breaks_classes() ->
+grapheme_break_classes() ->
     [cr, lf, control, extend, zwj, regional_indicator, prepend, spacing_mark,
      l, v, t, lv, lvt, e_base, e_modifier, glue_after_zwj, e_base_gaz].
 

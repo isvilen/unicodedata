@@ -20,9 +20,29 @@ collect_ucd_funs_1(AST, UcdFuns) ->
         ?Q("fun '@Name'/90919") ->
             {AST, collect_ucd_funs_2(Name, erl_syntax:concrete(Q1), UcdFuns)};
         ?Q("ucd_is_category(_@CP, _@V)") ->
-            collect_ucd_is_category_fun(AST, CP, V, UcdFuns);
+            collect_ucd_category_fun(AST, CP, V, UcdFuns,
+                                     ucd_is_category,
+                                     fun ucd_properties:categories/0);
         ?Q("ucd_has_property(_@CP, _@V)") ->
-            collect_ucd_has_property_fun(AST, CP, V, UcdFuns);
+            collect_ucd_property_fun(AST, CP, V, UcdFuns,
+                                     ucd_has_property,
+                                     fun ucd_properties:properties_list_types/0);
+        ?Q("ucd_grapheme_break(_@CP, _@V)") ->
+            collect_ucd_category_fun(AST, CP, V, UcdFuns,
+                                    ucd_grapheme_break,
+                                    fun ucd_segmentation:grapheme_break_classes/0);
+        ?Q("ucd_word_break(_@CP, _@V)") ->
+            collect_ucd_category_fun(AST, CP, V, UcdFuns,
+                                    ucd_word_break,
+                                    fun ucd_segmentation:word_break_classes/0);
+        ?Q("ucd_sentence_break(_@CP, _@V)") ->
+            collect_ucd_category_fun(AST, CP, V, UcdFuns,
+                                    ucd_sentence_break,
+                                    fun ucd_segmentation:sentence_break_classes/0);
+        ?Q("ucd_line_break(_@CP, _@V)") ->
+            collect_ucd_category_fun(AST, CP, V, UcdFuns,
+                                    ucd_line_break,
+                                    fun ucd_segmentation:line_break_classes/0);
         ?Q("'@Name'(_@@Args)") ->
             case erl_syntax:type(Name) of
                 atom -> {AST, collect_ucd_funs_2(Name, length(Args), UcdFuns)};
@@ -42,15 +62,17 @@ collect_ucd_funs_2(NameAST, Arity, UcdFuns) ->
     end.
 
 
-collect_ucd_is_category_fun(AST, CP, V, UcdFuns) ->
+collect_ucd_category_fun(AST, CP, V, UcdFuns, Name, ValuesFun) ->
     case erl_syntax:type(V) of
         atom ->
-            collect_ucd_is_category_fun_1(AST, CP, [erl_syntax:atom_value(V)], UcdFuns);
+            collect_ucd_category_fun_1(AST, CP, [erl_syntax:atom_value(V)],
+                                       UcdFuns, Name, ValuesFun);
         list ->
             case lists:all(fun (E) -> erl_syntax:type(E) == atom end,
                            erl_syntax:list_elements(V)) of
                 true ->
-                    collect_ucd_is_category_fun_1(AST, CP, erl_syntax:concrete(V), UcdFuns);
+                    collect_ucd_category_fun_1(AST, CP, erl_syntax:concrete(V),
+                                               UcdFuns, Name, ValuesFun);
                 false ->
                     {AST, UcdFuns}
             end;
@@ -58,32 +80,32 @@ collect_ucd_is_category_fun(AST, CP, V, UcdFuns) ->
             {AST, UcdFuns}
     end.
 
-collect_ucd_is_category_fun_1(AST, CP, Categories, UcdFuns) ->
-    case lists:all(fun (C) -> lists:member(C, ucd_properties:categories()) end
-                  , Categories) of
+collect_ucd_category_fun_1(AST, CP, Values, UcdFuns, Name, ValuesFun) ->
+    case lists:all(fun (C) -> lists:member(C, ValuesFun()) end , Values) of
         true ->
-            Name = ucd_fun_name(ucd_is_category, Categories),
-            NewAST = ?Q("'@Name@'(_@CP)"),
-            {NewAST, sets:add_element({ucd_is_category, Categories}, UcdFuns)};
+            NewName = ucd_fun_name(Name, Values),
+            NewAST = ?Q("'@NewName@'(_@CP)"),
+            {NewAST, sets:add_element({Name, Values}, UcdFuns)};
         false ->
             {AST, UcdFuns}
     end.
 
 
-collect_ucd_has_property_fun(AST, CP, V, UcdFuns) ->
+collect_ucd_property_fun(AST, CP, V, UcdFuns, Name, ValuesFun) ->
     case erl_syntax:type(V) of
         atom ->
-            collect_ucd_has_property_fun_1(AST, CP, erl_syntax:atom_value(V), UcdFuns);
+            collect_ucd_property_fun_1(AST, CP, erl_syntax:atom_value(V),
+                                       UcdFuns, Name, ValuesFun);
         _ ->
             {AST, UcdFuns}
     end.
 
-collect_ucd_has_property_fun_1(AST, CP, Property, UcdFuns) ->
-    case lists:member(Property, ucd_properties:properties_list_types()) of
+collect_ucd_property_fun_1(AST, CP, Property, UcdFuns, Name, ValuesFun) ->
+    case lists:member(Property, ValuesFun()) of
         true ->
-            Name = ucd_fun_name(ucd_has_property, [Property]),
-            NewAST = ?Q("'@Name@'(_@CP)"),
-            {NewAST, sets:add_element({ucd_has_property, Property}, UcdFuns)};
+            NewName = ucd_fun_name(Name, [Property]),
+            NewAST = ?Q("'@NewName@'(_@CP)"),
+            {NewAST, sets:add_element({Name, Property}, UcdFuns)};
         false ->
             {AST, UcdFuns}
     end.
@@ -122,6 +144,34 @@ forms({ucd_blocks, 0}, State0) ->
 forms({ucd_block, 1}, State0) ->
     {Blocks, State1} = blocks_data(State0),
     {[ucd_codegen:block_fun_ast(Blocks)], State1};
+
+forms({ucd_grapheme_break, 1}, State) ->
+    {[ucd_codegen:grapheme_break_fun_ast()], State};
+
+forms({ucd_grapheme_break, Classes}, State) ->
+    Name = ucd_fun_name(ucd_grapheme_break, Classes),
+    {[ucd_codegen:grapheme_break_classes_fun_ast(Name, Classes)], State};
+
+forms({ucd_word_break, 1}, State) ->
+    {[ucd_codegen:word_break_fun_ast()], State};
+
+forms({ucd_word_break, Classes}, State) ->
+    Name = ucd_fun_name(ucd_word_break, Classes),
+    {[ucd_codegen:word_break_classes_fun_ast(Name, Classes)], State};
+
+forms({ucd_sentence_break, 1}, State) ->
+    {[ucd_codegen:sentence_break_fun_ast()], State};
+
+forms({ucd_sentence_break, Classes}, State) ->
+    Name = ucd_fun_name(ucd_sentence_break, Classes),
+    {[ucd_codegen:sentence_break_classes_fun_ast(Name, Classes)], State};
+
+forms({ucd_line_break, 1}, State) ->
+    {[ucd_codegen:line_break_fun_ast()], State};
+
+forms({ucd_line_break, Classes}, State) ->
+    Name = ucd_fun_name(ucd_line_break, Classes),
+    {[ucd_codegen:line_break_classes_fun_ast(Name, Classes)], State};
 
 forms({ucd_is_category, Categories}, State) ->
     Name = ucd_fun_name(ucd_is_category, Categories),

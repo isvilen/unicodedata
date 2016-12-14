@@ -29,6 +29,14 @@
         , nfkc_quick_check_fun_ast/1
         , block_fun_ast/1
         , codepoint_range_fun_ast/1
+        , grapheme_break_fun_ast/0
+        , grapheme_break_classes_fun_ast/2
+        , word_break_fun_ast/0
+        , word_break_classes_fun_ast/2
+        , sentence_break_fun_ast/0
+        , sentence_break_classes_fun_ast/2
+        , line_break_fun_ast/0
+        , line_break_classes_fun_ast/2
         ]).
 
 -include_lib("syntax_tools/include/merl.hrl").
@@ -360,6 +368,60 @@ codepoint_range_value(Range) ->
     {From, To} = element(1, Range),
     Name = ucd_properties:range_name(element(2, Range)),
     {From, To, Name}.
+
+
+grapheme_break_fun_ast() ->
+    Data = ucd_segmentation:grapheme_breaks(),
+    segmentation_fun_ast(ucd_grapheme_break, Data, other).
+
+
+word_break_fun_ast() ->
+    Data = ucd_segmentation:word_breaks(),
+    segmentation_fun_ast(ucd_word_break, Data, other).
+
+
+sentence_break_fun_ast() ->
+    Data = ucd_segmentation:sentence_breaks(),
+    segmentation_fun_ast(ucd_sentence_break, Data, other).
+
+
+line_break_fun_ast() ->
+    Data = ucd_segmentation:line_breaks(),
+    segmentation_fun_ast(ucd_line_break, Data, xx).
+
+
+segmentation_fun_ast(Name, Data, Default) ->
+    RangeValues = [case V of
+                       {{F,T},R} -> {F,T,R};
+                       {Cp, R}   -> {Cp, Cp, R}
+                   end || V <- Data],
+    range_fun_ast(Name, RangeValues, ?Q("_@Default@")).
+
+
+grapheme_break_classes_fun_ast(Name, Classes) ->
+    Data = ucd_segmentation:grapheme_breaks(),
+    segmentation_classes_fun_ast(Name, Data, Classes).
+
+
+word_break_classes_fun_ast(Name, Classes) ->
+    Data = ucd_segmentation:word_breaks(),
+    segmentation_classes_fun_ast(Name, Data, Classes).
+
+
+sentence_break_classes_fun_ast(Name, Classes) ->
+    Data = ucd_segmentation:sentence_breaks(),
+    segmentation_classes_fun_ast(Name, Data, Classes).
+
+
+line_break_classes_fun_ast(Name, Classes) ->
+    Data = ucd_segmentation:line_breaks(),
+    segmentation_classes_fun_ast(Name, Data, Classes).
+
+
+segmentation_classes_fun_ast(Name, Data, Classes) ->
+    Data1 = [V || {V, Class} <- Data, lists:member(Class, Classes)],
+    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data1)],
+    range_fun_ast(Name, Ranges, ?Q("false")).
 
 
 decode_value_case_ast(ValueAST, Values) ->
