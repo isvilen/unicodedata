@@ -157,6 +157,10 @@ forms({ucd_block, 1}, State0) ->
     {Blocks, State1} = blocks_data(State0),
     {[ucd_codegen:block_fun_ast(Blocks)], State1};
 
+forms({ucd_decomposition, 1}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:decomposition_funs_ast(Data), State1};
+
 forms({ucd_grapheme_break, 1}, State) ->
     {[ucd_codegen:grapheme_break_fun_ast()], State};
 

@@ -24,6 +24,7 @@
         , titlecase_mapping_funs_ast/1
         , special_casing_funs_ast/2
         , numeric_funs_ast/2
+        , decomposition_funs_ast/1
         , nfd_quick_check_fun_ast/1
         , nfc_quick_check_fun_ast/1
         , nfkd_quick_check_fun_ast/1
@@ -372,6 +373,33 @@ numeric_fun_ast(ExtraValues) ->
        ,"       _@DefaultAST;"
        ,"    Idx ->"
        ,"        ucd_numeric_data(Idx)"
+       ," end."
+       ]).
+
+
+decomposition_funs_ast(Data) ->
+    Data1 = ucd_properties:decomposition(Data),
+    [decomposition_index_fun_ast(Data1)
+    ,decomposition_data_fun_ast(Data1)
+    ,decomposition_fun_ast()].
+
+
+decomposition_index_fun_ast(Data) ->
+    index_fun_ast(ucd_decomposition_idx, compact(Data)).
+
+
+decomposition_data_fun_ast(Data) ->
+    Data1 = list_to_tuple([V || {_,V} <- Data]),
+    ?Q(["ucd_decomposition_data(Index) ->"
+        "    element(Index + 1, _@Data1@)."
+       ]).
+
+
+decomposition_fun_ast() ->
+    ?Q(["ucd_decomposition(CP) ->"
+       ," case ucd_decomposition_idx(CP) of"
+       ,"    undefined -> undefined;"
+       ,"    Idx       -> ucd_decomposition_data(Idx)"
        ," end."
        ]).
 
