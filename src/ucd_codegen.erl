@@ -22,6 +22,7 @@
         , lowercase_mapping_funs_ast/1
         , uppercase_mapping_funs_ast/1
         , titlecase_mapping_funs_ast/1
+        , special_casing_funs_ast/2
         , numeric_funs_ast/2
         , nfd_quick_check_fun_ast/1
         , nfc_quick_check_fun_ast/1
@@ -295,6 +296,54 @@ case_mapping_fun_ast(Name, IdxName, DataName) ->
        ,"    undefined -> undefined;"
        ,"    Idx       -> '@DataName@'(Idx)"
        ,"  end."]).
+
+
+special_casing_funs_ast(Data, lower) ->
+    Data1 = [{CP, V, Cond} || {CP, V, _, _, Cond} <- Data, V /= CP],
+    special_casing_funs_ast_1(Data1
+                             ,ucd_special_casing_lower
+                             ,ucd_special_casing_lower_idx
+                             ,ucd_special_casing_lower_data);
+
+special_casing_funs_ast(Data, title) ->
+    Data1 = [{CP, V, Cond} || {CP, _, V, _, Cond} <- Data, V /= CP],
+    special_casing_funs_ast_1(Data1
+                             ,ucd_special_casing_title
+                             ,ucd_special_casing_title_idx
+                             ,ucd_special_casing_title_data);
+
+special_casing_funs_ast(Data, upper) ->
+    Data1 = [{CP, V, Cond} || {CP, _, _, V, Cond} <- Data, V /= CP],
+    special_casing_funs_ast_1(Data1
+                             ,ucd_special_casing_upper
+                             ,ucd_special_casing_upper_idx
+                             ,ucd_special_casing_upper_data).
+
+special_casing_funs_ast_1(Data, Name, IdxName, DataName) ->
+    Data1 = ucd:sort_by_codepoints(Data),
+    [special_casing_index_fun_ast(IdxName, Data1)
+    ,special_casing_data_fun_ast(DataName, Data1)
+    ,special_casing_fun_ast(Name, IdxName, DataName)].
+
+
+special_casing_index_fun_ast(Name, Data) ->
+    index_fun_ast(Name, compact(Data)).
+
+
+special_casing_data_fun_ast(Name, Data) ->
+    Data1 = list_to_tuple([{V, Cond} || {_,V, Cond} <- Data]),
+    ?Q(["'@Name@'(Index) ->"
+        "    element(Index + 1, _@Data1@)."
+       ]).
+
+
+special_casing_fun_ast(Name, IdxName, DataName) ->
+    ?Q(["'@Name@'(CP) ->"
+       ," case '@IdxName@'(CP) of"
+       ,"    undefined -> undefined;"
+       ,"    Idx       -> '@DataName@'(Idx)"
+       ," end."
+       ]).
 
 
 numeric_funs_ast(Data, ExtraValues) ->

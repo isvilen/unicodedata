@@ -43,6 +43,12 @@ collect_ucd_funs_1(AST, UcdFuns) ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_line_break,
                                     fun ucd_segmentation:line_break_classes/0);
+        ?Q("ucd_special_casing(_@CP, lower)") ->
+            collect_ucd_funs_replace({ucd_special_casing_lower, 1}, CP, UcdFuns);
+        ?Q("ucd_special_casing(_@CP, title)") ->
+            collect_ucd_funs_replace({ucd_special_casing_title, 1}, CP, UcdFuns);
+        ?Q("ucd_special_casing(_@CP, upper)") ->
+            collect_ucd_funs_replace({ucd_special_casing_upper, 1}, CP, UcdFuns);
         ?Q("'@Name'(_@@Args)") ->
             case erl_syntax:type(Name) of
                 atom -> {AST, collect_ucd_funs_2(Name, length(Args), UcdFuns)};
@@ -60,6 +66,11 @@ collect_ucd_funs_2(NameAST, Arity, UcdFuns) ->
         _ ->
             UcdFuns
     end.
+
+
+collect_ucd_funs_replace({Name, _}=Fun, CP, UcdFuns) ->
+    NewAST = ?Q("'@Name@'(_@CP)"),
+    {NewAST, sets:add_element(Fun, UcdFuns)}.
 
 
 collect_ucd_category_fun(AST, CP, V, UcdFuns, Name, ValuesFun) ->
@@ -117,6 +128,7 @@ forms(Funs) ->
              , ranges => undefined
              , blocks => undefined
              , properties_list => undefined
+             , special_casing => undefined
              , generated_functions => sets:new()
              },
     {Forms, _} = lists:mapfoldl(fun forms/2, State, Funs),
@@ -181,6 +193,27 @@ forms({ucd_has_property, Property}, State) ->
     Name = ucd_fun_name(ucd_has_property, [Property]),
     has_property_forms(Name, Property, State);
 
+forms({ucd_lowercase_mapping, 1}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:lowercase_mapping_funs_ast(Data), State1};
+
+forms({ucd_uppercase_mapping, 1}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:uppercase_mapping_funs_ast(Data), State1};
+
+forms({ucd_titlecase_mapping, 1}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:titlecase_mapping_funs_ast(Data), State1};
+
+forms({ucd_special_casing_upper, 1}, State) ->
+    ucd_special_casing_forms(upper, State);
+
+forms({ucd_special_casing_lower, 1}, State) ->
+    ucd_special_casing_forms(lower, State);
+
+forms({ucd_special_casing_title, 1}, State) ->
+    ucd_special_casing_forms(title, State);
+
 forms(_, State) ->
     {[], State}.
 
@@ -194,6 +227,12 @@ ensure_common_properties_index(Forms, State0) ->
             IdxFun = ucd_codegen:common_properties_index_fun_ast(Properties),
             {[IdxFun | Forms], function_generated(ucd_properties_idx, State1)}
     end.
+
+
+ucd_special_casing_forms(Mapping, State0) ->
+    {Data, State1} = special_casing_data(State0),
+    {ucd_codegen:special_casing_funs_ast(Data, Mapping), State1}.
+
 
 is_category_forms(Name, Categories, State0) ->
     {Data, State1} = ucd_data(State0),
@@ -255,6 +294,14 @@ ucd_proplist(#{properties_list := undefined}=State) ->
 
 ucd_proplist(#{properties_list := PropList}=State) ->
     {PropList, State}.
+
+
+special_casing_data(#{special_casing := undefined}=State0) ->
+    Data = ucd_casing:special_casing(),
+    {Data, State0#{special_casing := Data}};
+
+special_casing_data(#{special_casing := Data}=State) ->
+    {Data, State}.
 
 
 ucd_fun_name(Prefix, Parts) ->

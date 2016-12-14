@@ -16,6 +16,8 @@
         , blocks/0
         , block/1
         , codepoint_block/1
+        , to_uppercase/1
+        , to_lowercase/1
         ]).
 
 -type category() :: uppercase_letter
@@ -207,6 +209,16 @@ block(Name, [{Block, Range} | Blocks]) ->
 
 -spec codepoint_block(char()) -> binary() | no_block.
 codepoint_block(CP) -> ucd_block(CP).
+
+
+-spec to_uppercase(string()) -> string().
+to_uppercase(String) ->
+    unicodedata_case:to_uppercase(String).
+
+
+-spec to_lowercase(string()) -> string().
+to_lowercase(String) ->
+    unicodedata_case:to_lowercase(String).
 
 
 normalize_block_name(Name) ->
