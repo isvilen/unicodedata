@@ -4,26 +4,32 @@
 -include_lib("syntax_tools/include/merl.hrl").
 
 parse_transform(Forms, _Opts) ->
-    Forms ++ forms(collect_ucd_funs(Forms)).
+    {Forms1, UcdFuns} = collect_ucd_funs(Forms),
+    Forms1 ++ forms(UcdFuns).
 
 
 collect_ucd_funs(Forms) ->
-    sets:to_list(lists:foldl(fun collect_ucd_funs/2, sets:new(), Forms)).
+    {Forms1, UcdFuns} = lists:mapfoldr(fun collect_ucd_funs/2, sets:new(), Forms),
+    {erl_syntax:revert_forms(Forms1), sets:to_list(UcdFuns)}.
 
 collect_ucd_funs(Form, UcdFuns) ->
-    erl_syntax_lib:fold(fun collect_ucd_funs_1/2, UcdFuns, Form).
+    erl_syntax_lib:mapfold(fun collect_ucd_funs_1/2, UcdFuns, Form).
 
 collect_ucd_funs_1(AST, UcdFuns) ->
     case AST of
         ?Q("fun '@Name'/90919") ->
-            collect_ucd_funs_2(Name, erl_syntax:concrete(Q1), UcdFuns);
+            {AST, collect_ucd_funs_2(Name, erl_syntax:concrete(Q1), UcdFuns)};
+        ?Q("ucd_is_category(_@CP, _@V)") ->
+            collect_ucd_is_category_fun(AST, CP, V, UcdFuns);
+        ?Q("ucd_has_property(_@CP, _@V)") ->
+            collect_ucd_has_property_fun(AST, CP, V, UcdFuns);
         ?Q("'@Name'(_@@Args)") ->
             case erl_syntax:type(Name) of
-                atom -> collect_ucd_funs_2(Name, length(Args), UcdFuns);
-                _    -> UcdFuns
+                atom -> {AST, collect_ucd_funs_2(Name, length(Args), UcdFuns)};
+                _    -> {AST, UcdFuns}
             end;
         _ ->
-            UcdFuns
+            {AST, UcdFuns}
     end.
 
 collect_ucd_funs_2(NameAST, Arity, UcdFuns) ->
@@ -36,11 +42,59 @@ collect_ucd_funs_2(NameAST, Arity, UcdFuns) ->
     end.
 
 
+collect_ucd_is_category_fun(AST, CP, V, UcdFuns) ->
+    case erl_syntax:type(V) of
+        atom ->
+            collect_ucd_is_category_fun_1(AST, CP, [erl_syntax:atom_value(V)], UcdFuns);
+        list ->
+            case lists:all(fun (E) -> erl_syntax:type(E) == atom end,
+                           erl_syntax:list_elements(V)) of
+                true ->
+                    collect_ucd_is_category_fun_1(AST, CP, erl_syntax:concrete(V), UcdFuns);
+                false ->
+                    {AST, UcdFuns}
+            end;
+        _ ->
+            {AST, UcdFuns}
+    end.
+
+collect_ucd_is_category_fun_1(AST, CP, Categories, UcdFuns) ->
+    case lists:all(fun (C) -> lists:member(C, ucd_properties:categories()) end
+                  , Categories) of
+        true ->
+            Name = ucd_fun_name(ucd_is_category, Categories),
+            NewAST = ?Q("'@Name@'(_@CP)"),
+            {NewAST, sets:add_element({ucd_is_category, Categories}, UcdFuns)};
+        false ->
+            {AST, UcdFuns}
+    end.
+
+
+collect_ucd_has_property_fun(AST, CP, V, UcdFuns) ->
+    case erl_syntax:type(V) of
+        atom ->
+            collect_ucd_has_property_fun_1(AST, CP, erl_syntax:atom_value(V), UcdFuns);
+        _ ->
+            {AST, UcdFuns}
+    end.
+
+collect_ucd_has_property_fun_1(AST, CP, Property, UcdFuns) ->
+    case lists:member(Property, ucd_properties:properties_list_types()) of
+        true ->
+            Name = ucd_fun_name(ucd_has_property, [Property]),
+            NewAST = ?Q("'@Name@'(_@CP)"),
+            {NewAST, sets:add_element({ucd_has_property, Property}, UcdFuns)};
+        false ->
+            {AST, UcdFuns}
+    end.
+
+
 forms(Funs) ->
     State = #{ data => undefined
              , common_properties => undefined
              , ranges => undefined
              , blocks => undefined
+             , properties_list => undefined
              , generated_functions => sets:new()
              },
     {Forms, _} = lists:mapfoldl(fun forms/2, State, Funs),
@@ -69,6 +123,14 @@ forms({ucd_block, 1}, State0) ->
     {Blocks, State1} = blocks_data(State0),
     {[ucd_codegen:block_fun_ast(Blocks)], State1};
 
+forms({ucd_is_category, Categories}, State) ->
+    Name = ucd_fun_name(ucd_is_category, Categories),
+    is_category_forms(Name, Categories, State);
+
+forms({ucd_has_property, Property}, State) ->
+    Name = ucd_fun_name(ucd_has_property, [Property]),
+    has_property_forms(Name, Property, State);
+
 forms(_, State) ->
     {[], State}.
 
@@ -82,6 +144,17 @@ ensure_common_properties_index(Forms, State0) ->
             IdxFun = ucd_codegen:common_properties_index_fun_ast(Properties),
             {[IdxFun | Forms], function_generated(ucd_properties_idx, State1)}
     end.
+
+is_category_forms(Name, Categories, State0) ->
+    {Data, State1} = ucd_data(State0),
+    Forms = [ucd_codegen:is_category_fun_ast(Name, Data, Categories)],
+    {Forms, State1}.
+
+
+has_property_forms(Name, Property, State0) ->
+    {Data, State1} = ucd_proplist(State0),
+    Forms = [ucd_codegen:has_property_fun_ast(Name, Data, Property)],
+    {Forms, State1}.
 
 
 is_function_generated(Name, #{generated_functions := Funs}) ->
@@ -124,3 +197,16 @@ blocks_data(#{blocks := undefined}=State) ->
 
 blocks_data(#{blocks := Blocks}=State) ->
     {Blocks, State}.
+
+
+ucd_proplist(#{properties_list := undefined}=State) ->
+    PropList = ucd_properties:properties_list(),
+    {PropList, State#{properties_list := PropList}};
+
+ucd_proplist(#{properties_list := PropList}=State) ->
+    {PropList, State}.
+
+
+ucd_fun_name(Prefix, Parts) ->
+    Suffix = string:join([atom_to_list(P) || P <- Parts], "_"),
+    list_to_atom(atom_to_list(Prefix) ++ "_" ++ Suffix).

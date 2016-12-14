@@ -8,6 +8,8 @@
         , category_data_fun_ast/1
         , category_range_data_fun_ast/1
         , category_fun_ast/0
+        , is_category_fun_ast/3
+        , has_property_fun_ast/3
         , combining_class_data_fun_ast/1
         , combining_class_range_data_fun_ast/1
         , combining_class_fun_ast/0
@@ -157,6 +159,18 @@ category_fun_ast() ->
        ,"    undefined -> ucd_category_range_data(CP);"
        ,"    Idx       -> ucd_category_data(Idx)"
        ,"  end."]).
+
+
+is_category_fun_ast(Name, Data, Categories) ->
+    Data1 = [element(1,V) || V <- Data, lists:member(element(3,V), Categories)],
+    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data1)],
+    range_fun_ast(Name, Ranges, ?Q("false")).
+
+
+has_property_fun_ast(Name, Properties, Property) ->
+    Data1 = [V || {V, Prop} <- Properties, Prop == Property],
+    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data1)],
+    range_fun_ast(Name, Ranges, ?Q("false")).
 
 
 combining_class_data_fun_ast(CommonProperties) ->
@@ -441,24 +455,27 @@ enum_values(Values) ->
     lists:zip(Values,lists:seq(0,Size-1)).
 
 
-compact([]) -> [];
-compact([H|T]) ->
-    case element(1, H) of
-        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2}]);
-        Cp         -> compact(T, [{Cp, Cp}])
+compact(Data) ->
+    compact_ranges([element(1,V) || V <- Data]).
+
+compact_ranges([]) -> [];
+compact_ranges([H|T]) ->
+    case H of
+        {Cp1, Cp2} -> compact_ranges(T, [{Cp1, Cp2}]);
+        Cp         -> compact_ranges(T, [{Cp, Cp}])
     end.
 
-compact([], Acc) ->
+compact_ranges([], Acc) ->
     lists:reverse(Acc);
 
-compact([H|T], [{Cp1, Cp2}=Range | Acc]) ->
-    case element(1, H) of
+compact_ranges([H|T], [{Cp1, Cp2}=Range | Acc]) ->
+    case H of
         {NCp1, NCp2} ->
-            compact(T, [{NCp1, NCp2}, Range | Acc]);
+            compact_ranges(T, [{NCp1, NCp2}, Range | Acc]);
         Cp when Cp == Cp2 + 1 ->
-            compact(T, [{Cp1, Cp} | Acc]);
+            compact_ranges(T, [{Cp1, Cp} | Acc]);
         Cp ->
-            compact(T, [{Cp, Cp}, Range | Acc])
+            compact_ranges(T, [{Cp, Cp}, Range | Acc])
     end.
 
 
