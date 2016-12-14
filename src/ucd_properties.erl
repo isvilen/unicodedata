@@ -1,5 +1,5 @@
 -module(ucd_properties).
--export([ data/0
+-export([ unicode_data/0
         , common_properties/1
         , decomposition/1
         , numeric/1
@@ -13,11 +13,12 @@
         , bidi_classes/0
         , bidi_class_name/1
         , bidi_class_defaults/0
+        , properties_list/0
+        , properties_list_types/0
         ]).
 
-data() ->
-    Data = ucd:fold_lines(fun data/2, "UnicodeData.txt", []),
-    lists:reverse(Data).
+unicode_data() ->
+    lists:reverse(ucd:fold_lines(fun unicode_data/2, "UnicodeData.txt", [])).
 
 
 common_properties(Data) ->
@@ -181,20 +182,102 @@ bidi_class_defaults() ->
     lists:sort(fun ({_,V1,_}, {_,V2,_}) -> V1 =< V2 end, Ranges).
 
 
-data([Cp, Name | _] = Fields, Acc) ->
+properties_list() ->
+    ucd:fold_lines(fun ([CP, Prop]) ->
+                       {ucd:codepoint_or_range(CP), properties_list(Prop)}
+                   end, "PropList.txt").
+
+properties_list(<<"White_Space ">>)             -> white_space;
+properties_list(<<"Bidi_Control ">>)            -> bidi_control;
+properties_list(<<"Join_Control ">>)            -> join_control;
+properties_list(<<"Dash ">>)                    -> dash;
+properties_list(<<"Hyphen ">>)                  -> hyphen;
+properties_list(<<"Quotation_Mark ">>)          -> quotation_mark;
+properties_list(<<"Terminal_Punctuation ">>)    -> terminal_punctuation;
+properties_list(<<"Other_Math ">>)              -> other_math;
+properties_list(<<"Hex_Digit ">>)               -> hex_digit;
+properties_list(<<"ASCII_Hex_Digit ">>)         -> ascii_hex_digit;
+properties_list(<<"Other_Alphabetic ">>)        -> other_alphabetic;
+properties_list(<<"Ideographic ">>)             -> ideographic;
+properties_list(<<"Diacritic ">>)               -> diacritic;
+properties_list(<<"Extender ">>)                -> extender;
+properties_list(<<"Other_Lowercase ">>)         -> other_lowercase;
+properties_list(<<"Other_Uppercase ">>)         -> other_uppercase;
+properties_list(<<"Noncharacter_Code_Point ">>) -> noncharacter_code_point;
+properties_list(<<"Other_Grapheme_Extend ">>)   -> other_grapheme_extend;
+properties_list(<<"IDS_Binary_Operator ">>)     -> ids_binary_operator;
+properties_list(<<"IDS_Trinary_Operator ">>)    -> ids_trinary_operator;
+properties_list(<<"Radical ">>)                 -> radical;
+properties_list(<<"Unified_Ideograph ">>)       -> unified_ideograph;
+properties_list(<<"Deprecated ">>)              -> deprecated;
+properties_list(<<"Soft_Dotted ">>)             -> soft_dotted;
+properties_list(<<"Logical_Order_Exception ">>) -> logical_order_exception;
+properties_list(<<"Other_ID_Start ">>)          -> other_id_start;
+properties_list(<<"Other_ID_Continue ">>)       -> other_id_continue;
+properties_list(<<"Sentence_Terminal ">>)       -> sentence_terminal;
+properties_list(<<"Variation_Selector ">>)      -> variation_selector;
+properties_list(<<"Pattern_White_Space ">>)     -> pattern_white_space;
+properties_list(<<"Pattern_Syntax ">>)          -> pattern_syntax;
+properties_list(<<"Prepended_Concatenation_Mark ">>) ->
+    prepended_concatenation_mark;
+properties_list(<<"Other_Default_Ignorable_Code_Point ">>) ->
+    other_default_ignorable_code_point.
+
+
+properties_list_types() ->
+    [ white_space
+    , bidi_control
+    , join_control
+    , dash
+    , hyphen
+    , quotation_mark
+    , terminal_punctuation
+    , other_math
+    , hex_digit
+    , ascii_hex_digit
+    , other_alphabetic
+    , ideographic
+    , diacritic
+    , extender
+    , other_lowercase
+    , other_uppercase
+    , noncharacter_code_point
+    , other_grapheme_extend
+    , ids_binary_operator
+    , ids_trinary_operator
+    , radical
+    , unified_ideograph
+    , deprecated
+    , soft_dotted
+    , logical_order_exception
+    , other_id_start
+    , other_id_continue
+    , sentence_terminal
+    , variation_selector
+    , pattern_white_space
+    , pattern_syntax
+    , prepended_concatenation_mark
+    , other_default_ignorable_code_point
+].
+
+
+unicode_data([Cp, Name | _] = Fields, Acc) ->
     case Name of
         <<"<",Name1/binary>> ->
             case binary:match(Name1, <<", Last>">>) of
-                {Pos, _} -> data_range(Cp, binary:part(Name1, {0, Pos}), Acc);
-                 nomatch -> [data_codepoint(Fields) | Acc]
+                {Pos, _} ->
+                    unicode_data_range(Cp, binary:part(Name1, {0, Pos}), Acc);
+                 nomatch ->
+                    [unicode_data_codepoint(Fields) | Acc]
             end;
         _ ->
-            [data_codepoint(Fields) | Acc]
+            [unicode_data_codepoint(Fields) | Acc]
     end.
 
 
-data_codepoint([Cp, Name, Cat, CombClass, BidiClass, Decomp, Decimal, Digit, Numeric
-               ,BidiMirrored, _ , _, Upper, Lower, Title]) ->
+unicode_data_codepoint([Cp, Name, Cat, CombClass, BidiClass, Decomp
+                       ,Decimal, Digit, Numeric, BidiMirrored, _ , _
+                       ,Upper, Lower, Title]) ->
     { ucd:codepoint(Cp)
     , Name
     , category(Cat)
@@ -208,7 +291,7 @@ data_codepoint([Cp, Name, Cat, CombClass, BidiClass, Decomp, Decimal, Digit, Num
     , case_mapping(Title)
     }.
 
-data_range(Cp, Name, [H | T]) ->
+unicode_data_range(Cp, Name, [H | T]) ->
     CpFirst = element(1, H),
     H1 = setelement(1, H, {CpFirst, ucd:codepoint(Cp)}),
     [setelement(2, H1, Name) | T].

@@ -93,7 +93,7 @@ function_generated(Name, #{generated_functions := Funs}=State) ->
 
 
 ucd_data(#{data := undefined}=State) ->
-    Data = ucd_properties:data(),
+    Data = ucd_properties:unicode_data(),
     {Data, State#{data := Data}};
 
 ucd_data(#{data := Data}=State) ->
