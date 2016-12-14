@@ -11,6 +11,8 @@
         , is_other/1
         , is_noncharacter/1
         , is_reserved/1
+        , numeric/1
+        , numeric_value/2
         , blocks/0
         , block/1
         , codepoint_block/1
@@ -156,6 +158,28 @@ is_reserved(CP) ->
     end.
 
 
+-spec numeric(char()) -> {Type, Value} | not_a_number
+      when Type :: numeric | digit | decimal
+                 | k_accounting_numeric | k_other_numeric | k_primary_numeric,
+           Value :: integer() | {integer(), pos_integer()}.
+
+numeric(CP) ->
+    case ucd_numeric(CP) of
+        undefined -> not_a_number;
+        Value     -> Value
+    end.
+
+
+-spec numeric_value(char(), Default) -> number() | Default
+      when Default :: number() | not_a_number.
+numeric_value(CP, Default) ->
+    case ucd_numeric(CP) of
+        undefined     -> Default;
+        {_, {V1, V2}} -> V1 / V2;
+        {_, V}        -> V
+    end.
+
+
 -spec blocks() -> [{binary(), {char(), char()}}].
 blocks() -> ucd_blocks().
 
@@ -282,6 +306,39 @@ category_test_() -> [
    ,?_assert(is_noncharacter(16#10FFFF))
 
    ,?_assert(is_reserved(16#E00FF))
+].
+
+numeric_test_() -> [
+    ?_assertEqual({decimal, 9},      numeric(16#0f29))
+   ,?_assertEqual({numeric, {1,2}},  numeric(16#0f2a))
+   ,?_assertEqual({numeric, {17,2}}, numeric(16#0f32))
+   ,?_assertEqual({numeric, {-1,2}}, numeric(16#0f33))
+   ,?_assertEqual({decimal, 0},      numeric(16#1040))
+   ,?_assertEqual({digit, 0},        numeric(16#2070))
+
+   ,?_assertEqual({k_other_numeric, 5},              numeric(16#3405))
+   ,?_assertEqual({k_primary_numeric, 10000},        numeric(16#4e07))
+   ,?_assertEqual({k_accounting_numeric, 1000},      numeric(16#4edf))
+   ,?_assertEqual({k_primary_numeric, 1000000000000},numeric(16#5146))
+   ,?_assertEqual({k_primary_numeric, 100},          numeric(16#767e))
+   ,?_assertEqual({k_accounting_numeric, 10000},     numeric(16#842c))
+   ,?_assertEqual({k_other_numeric, 30},             numeric(16#20983))
+   ,?_assertEqual({k_other_numeric, 40},             numeric(16#2098c))
+   ,?_assertEqual({k_other_numeric, 4},              numeric(16#2626d))
+
+   ,?_assertEqual(not_a_number, numeric($a))
+
+   ,?_assertEqual(0,            numeric_value($a, 0))
+   ,?_assertEqual(not_a_number, numeric_value($a, not_a_number))
+
+   ,?_assertEqual(9,   numeric_value(16#0f29, 0))
+   ,?_assertEqual(0.5, numeric_value(16#0f2a, 0))
+   ,?_assertEqual(8.5, numeric_value(16#0f32, 0))
+   ,?_assertEqual(-0.5,numeric_value(16#0f33, 0))
+   ,?_assertEqual(0,   numeric_value(16#1040, -1))
+   ,?_assertEqual(0,   numeric_value(16#2070, -1))
+
+   ,?_assertEqual(1000000000000,     numeric_value(16#5146, 0))
 ].
 
 blocks_test_() -> [

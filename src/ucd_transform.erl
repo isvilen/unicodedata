@@ -56,6 +56,10 @@ forms({ucd_category, 1}, State0) ->
             ],
     ensure_common_properties_index(Forms, State2);
 
+forms({ucd_numeric, 1}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:numeric_funs_ast(Data, ucd_unihan:numeric_data()), State1};
+
 forms({ucd_blocks, 0}, State0) ->
     {Blocks, State1} = blocks_data(State0),
     Data = [{Block, Range} || {Range, Block} <- Blocks],
