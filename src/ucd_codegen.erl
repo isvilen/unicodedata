@@ -132,16 +132,14 @@ data_fun_ast(Name, Items, ResultASTFun) ->
 
 
 common_properties_index_fun_ast(CommonProperties) ->
-    Ranges = [{From,To} || {From,To,_} <- CommonProperties],
-    index_fun_ast(ucd_properties_idx, Ranges).
+    index_fun_ast(ucd_properties_idx, compact(CommonProperties)).
 
 
 category_data_fun_ast(CommonProperties) ->
     Categories = ucd_properties:categories(),
     Names = [ucd_properties:category_name(C) || C <- Categories],
     DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
-    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(3,V) || V <- Vs] end,
-                         CommonProperties),
+    Data = [element(3,V) || V <- CommonProperties],
     Bits = encode_to_bits(Categories, Data),
     data_fun_ast(ucd_category_data, Bits, DecodeASTFun).
 
@@ -162,8 +160,7 @@ category_fun_ast() ->
 
 
 combining_class_data_fun_ast(CommonProperties) ->
-    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(4,V) || V <- Vs] end,
-                         CommonProperties),
+    Data = [element(4,V) || V <- CommonProperties],
     data_fun_ast(ucd_combining_class_data, [<<V>> || V <- Data]).
 
 
@@ -184,8 +181,7 @@ bidi_class_data_fun_ast(CommonProperties) ->
     Classes = ucd_properties:bidi_classes(),
     Names = [ucd_properties:bidi_class_name(C) || C <- Classes],
     DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
-    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(5,V) || V <- Vs] end,
-                         CommonProperties),
+    Data = [element(5,V) || V <- CommonProperties],
     Bits = encode_to_bits(Classes, Data),
     data_fun_ast(ucd_bidi_class_data, Bits, DecodeASTFun).
 
@@ -216,8 +212,7 @@ bidi_class_fun_ast() ->
 bidi_mirrored_data_fun_ast(CommonProperties) ->
     Values = [false, true],
     DecodeASTFun = fun (V) -> decode_value_case_ast(V, Values) end,
-    Data = lists:flatmap(fun ({_, _, Vs}) -> [element(6,V) || V <- Vs] end,
-                         CommonProperties),
+    Data = [element(6,V) || V <- CommonProperties],
     Bits = encode_to_bits(Values, Data),
     data_fun_ast(ucd_bidi_mirrored_data, Bits, DecodeASTFun).
 
@@ -237,43 +232,37 @@ bidi_mirrored_fun_ast() ->
 
 
 lowercase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(Data
-                         ,lowercase_mapping
+    case_mapping_funs_ast(ucd_properties:lowercase_mapping(Data)
                          ,ucd_lowercase_mapping
                          ,ucd_lowercase_mapping_idx
                          ,ucd_lowercase_mapping_data).
 
 
 uppercase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(Data
-                         ,uppercase_mapping
+    case_mapping_funs_ast(ucd_properties:uppercase_mapping(Data)
                          ,ucd_uppercase_mapping
                          ,ucd_uppercase_mapping_idx
                          ,ucd_uppercase_mapping_data).
 
 titlecase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(Data
-                         ,titlecase_mapping
+    case_mapping_funs_ast(ucd_properties:titlecase_mapping(Data)
                          ,ucd_titlecase_mapping
                          ,ucd_titlecase_mapping_idx
                          ,ucd_titlecase_mapping_data).
 
 
-case_mapping_funs_ast(Data, Mapping, Name, IdxName, DataName) ->
-    MappingProperties = ucd_properties:compact(Mapping, Data),
+case_mapping_funs_ast(MappingProperties, Name, IdxName, DataName) ->
     [case_mapping_index_fun_ast(IdxName, MappingProperties)
     ,case_mapping_data_fun_ast(DataName, MappingProperties)
     ,case_mapping_fun_ast(Name, IdxName, DataName)].
 
 
 case_mapping_index_fun_ast(Name, MappingProperties) ->
-    Ranges = [{From,To} || {From,To,_} <- MappingProperties],
-    index_fun_ast(Name, Ranges).
+    index_fun_ast(Name, compact(MappingProperties)).
 
 
 case_mapping_data_fun_ast(Name, MappingProperties) ->
-    Data = lists:flatmap(fun ({_, _, Vs}) -> [V || {_,V} <- Vs] end,
-                         MappingProperties),
+    Data = [V || {_,V} <- MappingProperties],
     Size = required_bits(lists:max(Data)),
     data_fun_ast(Name, [<<V:Size>> || V <- Data]).
 
@@ -287,20 +276,18 @@ case_mapping_fun_ast(Name, IdxName, DataName) ->
 
 
 numeric_funs_ast(Data, ExtraValues) ->
-    NumericProperties = ucd_properties:compact(numeric, Data),
+    NumericProperties = ucd_properties:numeric(Data),
     [numeric_index_fun_ast(NumericProperties)
     ,numeric_data_fun_ast(NumericProperties)
     ,numeric_fun_ast(ExtraValues)
     ].
 
 numeric_index_fun_ast(NumericProperties) ->
-    Ranges = [{From,To} || {From,To,_} <- NumericProperties],
-    index_fun_ast(ucd_numeric_idx, Ranges).
+    index_fun_ast(ucd_numeric_idx, compact(NumericProperties)).
 
 
 numeric_data_fun_ast(NumericProperties) ->
-    Numerics = lists:flatmap(fun({_,_,Vs}) -> [V || {_,V} <- Vs] end
-                            ,NumericProperties),
+    Numerics = [V || {_,V} <- NumericProperties],
     Data = list_to_tuple(Numerics),
     ?Q(["ucd_numeric_data(Index) ->"
         "    element(Index + 1, _@Data@)."
@@ -454,6 +441,27 @@ enum_values(Values) ->
     lists:zip(Values,lists:seq(0,Size-1)).
 
 
+compact([]) -> [];
+compact([H|T]) ->
+    case element(1, H) of
+        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2}]);
+        Cp         -> compact(T, [{Cp, Cp}])
+    end.
+
+compact([], Acc) ->
+    lists:reverse(Acc);
+
+compact([H|T], [{Cp1, Cp2}=Range | Acc]) ->
+    case element(1, H) of
+        {NCp1, NCp2} ->
+            compact(T, [{NCp1, NCp2}, Range | Acc]);
+        Cp when Cp == Cp2 + 1 ->
+            compact(T, [{Cp1, Cp} | Acc]);
+        Cp ->
+            compact(T, [{Cp, Cp}, Range | Acc])
+    end.
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -493,6 +501,17 @@ round_to_bytes_test_() -> [
   ?_assertEqual(1, round_to_bytes(1))
  ,?_assertEqual(1, round_to_bytes(8))
  ,?_assertEqual(2, round_to_bytes(9))
+].
+
+compact_test_() -> [
+  ?_assertEqual([{0, 2}
+                ,{4, 10}
+                ,{15, 15}]
+               ,compact([{0, a}
+                        ,{1, b}
+                        ,{2, c}
+                        ,{{4,10}, d}
+                        ,{15, e}]))
 ].
 
 index_fun_ast_test_() ->

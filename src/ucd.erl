@@ -8,7 +8,6 @@
         , codepoint_range/1
         , codepoint_or_range/1
         , codepoints/1
-        , compact/1
         , sort_by_codepoints/1
         , to_integer/1
         ]).
@@ -149,38 +148,6 @@ codepoints(Cps) ->
                      ,Cp /= <<>>].
 
 
-
-compact([]) -> [];
-compact([H|T]) ->
-    case element(1, H) of
-        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2, H}]);
-        Cp         -> compact(T, [{Cp, Cp, [H]}])
-    end.
-
-compact([], Acc) ->
-    lists:foldl(fun ({Start, End, Vs}, Acc0) when is_list(Vs) ->
-                        [{Start, End, lists:reverse(Vs)} | Acc0];
-                    (V, Acc0) ->
-                        [V | Acc0]
-                end, [], Acc);
-
-compact([H|T], [{_, _, V} | _] = Acc) when is_tuple(V) ->
-    case element(1, H) of
-        {Cp1, Cp2} -> compact(T, [{Cp1, Cp2, H} | Acc]);
-        Cp         -> compact(T, [{Cp, Cp, [H]} | Acc])
-    end;
-
-compact([H|T], [{Cp1, Cp2, Vs}=Range | Acc]) ->
-    case element(1, H) of
-        {NCp1, NCp2} ->
-            compact(T, [{NCp1, NCp2, H}, Range | Acc]);
-        Cp when Cp == Cp2 + 1 ->
-            compact(T, [{Cp1, Cp, [H|Vs]} | Acc]);
-        Cp ->
-            compact(T, [{Cp, Cp, [H]}, Range | Acc])
-    end.
-
-
 sort_by_codepoints(Data) -> lists:sort(fun compare_codepoints/2, Data).
 
 compare_codepoints(V1, V2) ->
@@ -197,17 +164,6 @@ to_integer(V) -> list_to_integer(binary_to_list(V)).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
-
-compact_test_() -> [
-  ?_assertEqual([{0, 2, [{0, a}, {1, b}, {2, c}]}
-                ,{4, 10, {{4,10}, d}}
-                ,{15, 15, [{15, e}]}]
-               ,compact([{0, a}
-                        ,{1, b}
-                        ,{2, c}
-                        ,{{4,10}, d}
-                        ,{15, e}]))
-].
 
 sort_by_codepoints_test_() -> [
   ?_assertEqual([{0, a}

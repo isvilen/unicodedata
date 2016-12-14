@@ -1,6 +1,11 @@
 -module(ucd_properties).
 -export([ data/0
-        , compact/2
+        , common_properties/1
+        , decomposition/1
+        , numeric/1
+        , lowercase_mapping/1
+        , uppercase_mapping/1
+        , titlecase_mapping/1
         , ranges/1
         , range_name/1
         , categories/0
@@ -15,8 +20,28 @@ data() ->
     lists:reverse(Data).
 
 
-compact(What, Data) ->
-    ucd:compact(filter(What,Data)).
+common_properties(Data) ->
+    filter(common_properties, Data).
+
+
+decomposition(Data) ->
+    filter(decomposition, Data).
+
+
+numeric(Data) ->
+    filter(numeric, Data).
+
+
+lowercase_mapping(Data) ->
+    filter(lowercase_mapping, Data).
+
+
+uppercase_mapping(Data) ->
+    filter(uppercase_mapping, Data).
+
+
+titlecase_mapping(Data) ->
+    filter(titlecase_mapping, Data).
 
 
 ranges(Data) ->
@@ -175,8 +200,8 @@ data_codepoint([Cp, Name, Cat, CombClass, BidiClass, Decomp, Decimal, Digit, Num
     , category(Cat)
     , combining_class(CombClass)
     , bidi_class(BidiClass)
-    , decomposition(Decomp)
-    , numeric(Decimal, Digit, Numeric)
+    , decomposition_data(Decomp)
+    , numeric_data(Decimal, Digit, Numeric)
     , bidi_mirrored(BidiMirrored)
     , case_mapping(Upper)
     , case_mapping(Lower)
@@ -233,9 +258,9 @@ combining_class(CombClass) ->
 bidi_class(BidiClass) -> erlang:binary_to_existing_atom(BidiClass, latin1).
 
 
-decomposition(<<>>) ->
+decomposition_data(<<>>) ->
     undefined;
-decomposition(Decomp) ->
+decomposition_data(Decomp) ->
     case binary:split(Decomp, <<" ">>, [global]) of
         [<<"<font>">>     | M] -> {font,     decomposition_1(M)};
         [<<"<noBreak>">>  | M] -> {no_break, decomposition_1(M)};
@@ -259,20 +284,20 @@ decomposition(Decomp) ->
 decomposition_1(Mappings) -> [ucd:codepoint(M) || M <- Mappings].
 
 
-numeric(<<>>, <<>>, <<>>) ->
+numeric_data(<<>>, <<>>, <<>>) ->
     undefined;
 
-numeric(<<>>, <<>>, Numeric) ->
+numeric_data(<<>>, <<>>, Numeric) ->
     Value = case binary:split(Numeric, <<"/">>) of
                 [N1,N2] -> {ucd:to_integer(N1), ucd:to_integer(N2)};
                 [N]     -> ucd:to_integer(N)
             end,
     {numeric, Value};
 
-numeric(<<>>, <<Digit:8>>, <<Digit:8>>) ->
+numeric_data(<<>>, <<Digit:8>>, <<Digit:8>>) ->
     {digit, Digit - $0};
 
-numeric(<<Decimal:8>>, <<Decimal:8>>, <<Decimal:8>>) ->
+numeric_data(<<Decimal:8>>, <<Decimal:8>>, <<Decimal:8>>) ->
     {decimal, Decimal - $0}.
 
 

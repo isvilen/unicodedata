@@ -98,7 +98,7 @@ ucd_data(#{data := Data}=State) ->
 
 common_properties_data(#{common_properties := undefined}=State0) ->
     {Data, State1} = ucd_data(State0),
-    Properties = ucd_properties:compact(common_properties, Data),
+    Properties = ucd_properties:common_properties(Data),
     {Properties, State1#{common_properties := Properties}};
 
 common_properties_data(#{common_properties := Properties}=State) ->
