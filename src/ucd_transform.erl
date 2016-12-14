@@ -129,6 +129,7 @@ forms(Funs) ->
              , blocks => undefined
              , properties_list => undefined
              , special_casing => undefined
+             , normalization_properties => undefined
              , generated_functions => sets:new()
              },
     {Forms, _} = lists:mapfoldl(fun forms/2, State, Funs),
@@ -230,6 +231,22 @@ forms({ucd_special_casing_lower, 1}, State) ->
 forms({ucd_special_casing_title, 1}, State) ->
     ucd_special_casing_forms(title, State);
 
+forms({ucd_nfc_quick_check, 1}, State0) ->
+    {Data, State1} = normalization_properties(State0),
+    {[ucd_codegen:nfc_quick_check_fun_ast(Data)], State1};
+
+forms({ucd_nfkc_quick_check, 1}, State0) ->
+    {Data, State1} = normalization_properties(State0),
+    {[ucd_codegen:nfkc_quick_check_fun_ast(Data)], State1};
+
+forms({ucd_nfd_quick_check, 1}, State0) ->
+    {Data, State1} = normalization_properties(State0),
+    {[ucd_codegen:nfd_quick_check_fun_ast(Data)], State1};
+
+forms({ucd_nfkd_quick_check, 1}, State0) ->
+    {Data, State1} = normalization_properties(State0),
+    {[ucd_codegen:nfkd_quick_check_fun_ast(Data)], State1};
+
 forms(_, State) ->
     {[], State}.
 
@@ -317,6 +334,14 @@ special_casing_data(#{special_casing := undefined}=State0) ->
     {Data, State0#{special_casing := Data}};
 
 special_casing_data(#{special_casing := Data}=State) ->
+    {Data, State}.
+
+
+normalization_properties(#{normalization_properties := undefined}=State0) ->
+    Data = ucd_normalization:normalization_properties(),
+    {Data, State0#{normalization_properties := Data}};
+
+normalization_properties(#{normalization_properties := Data}=State) ->
     {Data, State}.
 
 

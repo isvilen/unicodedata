@@ -1,9 +1,42 @@
 -module(unicodedata_normalization).
 -compile({parse_transform, ucd_transform}).
--export([ canonical_decomposition/1
+-export([ quick_check/2
+        , canonical_decomposition/1
         , compatibility_decomposition/1
         , canonical_ordering/1
         ]).
+
+-type normalization_form() :: nfc
+                            | nfkc
+                            | nfd
+                            | nfkd.
+
+-export_type([normalization_form/0]).
+
+
+-spec quick_check(normalization_form(), string()) -> yes | no | maybe.
+quick_check(Form, String) ->
+    quick_check_1(Form, String, 0, yes).
+
+
+quick_check_1(_, [], _, Result) ->
+    Result;
+
+quick_check_1(Form, [CP | CPs], LastClass, Result) ->
+    case ucd_combining_class(CP) of
+        Class when LastClass > Class, Class /= 0 -> no;
+        Class -> case quick_check_2(Form, CP) of
+                     no    -> no;
+                     maybe -> quick_check_1(Form, CPs, Class, maybe);
+                     _     -> quick_check_1(Form, CPs, Class, Result)
+                 end
+    end.
+
+quick_check_2(nfc, CP)  -> ucd_nfc_quick_check(CP);
+quick_check_2(nfkc, CP) -> ucd_nfkc_quick_check(CP);
+quick_check_2(nfd, CP)  -> ucd_nfd_quick_check(CP);
+quick_check_2(nfkd, CP) -> ucd_nfkd_quick_check(CP).
+
 
 -spec canonical_decomposition(string()) -> string().
 canonical_decomposition(String) ->

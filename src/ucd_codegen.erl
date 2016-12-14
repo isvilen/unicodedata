@@ -407,22 +407,22 @@ decomposition_fun_ast() ->
 
 nfd_quick_check_fun_ast(NormalizationProperties) ->
     Data = ucd_normalization:nfd_quick_check_no(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfd_quickcheck, [{V,no} || V <- Data]).
+    normalization_quickcheck_fun_ast(ucd_nfd_quick_check, [{V,no} || V <- Data]).
 
 
 nfc_quick_check_fun_ast(NormalizationProperties) ->
     Data = ucd_normalization:nfc_quick_check(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfc_quickcheck, Data).
+    normalization_quickcheck_fun_ast(ucd_nfc_quick_check, Data).
 
 
 nfkd_quick_check_fun_ast(NormalizationProperties) ->
     Data = ucd_normalization:nfkd_quick_check_no(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfkd_quickcheck, [{V,no} || V <- Data]).
+    normalization_quickcheck_fun_ast(ucd_nfkd_quick_check, [{V,no} || V <- Data]).
 
 
 nfkc_quick_check_fun_ast(NormalizationProperties) ->
     Data = ucd_normalization:nfkc_quick_check(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfkc_quickcheck, Data).
+    normalization_quickcheck_fun_ast(ucd_nfkc_quick_check, Data).
 
 
 normalization_quickcheck_fun_ast(Name, Data) ->
