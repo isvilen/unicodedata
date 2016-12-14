@@ -2,6 +2,7 @@
 -compile({parse_transform, ucd_transform}).
 -export([ canonical_decomposition/1
         , compatibility_decomposition/1
+        , canonical_ordering/1
         ]).
 
 -spec canonical_decomposition(string()) -> string().
@@ -35,6 +36,28 @@ compatibility_decomposition_1([CP | CPs], AccIn) ->
             DCPs      -> push(compatibility_decomposition(DCPs), AccIn)
         end,
     compatibility_decomposition_1(CPs, AccOut).
+
+
+-spec canonical_ordering(string()) -> string().
+canonical_ordering(String) ->
+    canonical_ordering_1(String, [], []).
+
+canonical_ordering_1([], Acc1, Acc2) ->
+    lists:reverse(canonical_sort(Acc2) ++ Acc1);
+
+canonical_ordering_1([CP | CPs], Acc1, Acc2) ->
+    case ucd_combining_class(CP) of
+        0 when Acc2 == [] ->
+            canonical_ordering_1(CPs, [CP | Acc1], []);
+        0 ->
+            NewAcc1 = canonical_sort(Acc2) ++ Acc1,
+            canonical_ordering_1(CPs, [CP | NewAcc1], []);
+        CC ->
+            canonical_ordering_1(CPs, Acc1, [{-CC, CP} | Acc2])
+    end.
+
+canonical_sort(Acc) ->
+    [CP || {_, CP} <- lists:keysort(1, Acc)].
 
 
 decomposition(CP) ->
@@ -111,6 +134,33 @@ compatibility_decomposition_test_() -> [
    ,?_assertEqual("ガ",   compatibility_decomposition("ガ"))
    ,?_assertEqual("가",   compatibility_decomposition("가"))
    ,?_assertEqual("뗣", compatibility_decomposition("뗣"))
+].
+
+
+canonical_ordering_test_() -> [
+    ?_assertEqual(                   [68,775],
+                  canonical_ordering([68,775]))
+
+   ,?_assertEqual(                   [68,803,775],
+                  canonical_ordering([68,803,775]))
+
+   ,?_assertEqual(                   [68,803,775],
+                  canonical_ordering([68,775,803]))
+
+   ,?_assertEqual(                   [68,795,803,775],
+                  canonical_ordering([68,775,795,803]))
+
+   ,?_assertEqual(                   [65,66,775,67,68],
+                  canonical_ordering([65,66,775,67,68]))
+
+   ,?_assertEqual(                   [65,66,803,775,67,68],
+                  canonical_ordering([65,66,803,775,67,68]))
+
+   ,?_assertEqual(                   [65,66,803,775,67,68],
+                  canonical_ordering([65,66,775,803,67,68]))
+
+   ,?_assertEqual(                   [65,66,795,803,775,67,68],
+                  canonical_ordering([65,66,775,795,803,67,68]))
 ].
 
 -endif.

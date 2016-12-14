@@ -144,6 +144,15 @@ forms({ucd_category, 1}, State0) ->
             ],
     ensure_common_properties_index(Forms, State2);
 
+forms({ucd_combining_class, 1}, State0) ->
+    {Properties, State1} = common_properties_data(State0),
+    {Ranges, State2} = ranges_data(State1),
+    Forms = [ ucd_codegen:combining_class_data_fun_ast(Properties)
+            , ucd_codegen:combining_class_range_data_fun_ast(Ranges)
+            , ucd_codegen:combining_class_fun_ast()
+            ],
+    ensure_common_properties_index(Forms, State2);
+
 forms({ucd_numeric, 1}, State0) ->
     {Data, State1} = ucd_data(State0),
     {ucd_codegen:numeric_funs_ast(Data, ucd_unihan:numeric_data()), State1};
