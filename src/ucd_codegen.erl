@@ -29,6 +29,7 @@
         , nfc_quick_check_fun_ast/1
         , nfkd_quick_check_fun_ast/1
         , nfkc_quick_check_fun_ast/1
+        , hangul_syllable_type_fun_ast/0
         , block_fun_ast/1
         , codepoint_range_fun_ast/1
         , grapheme_break_fun_ast/0
@@ -430,6 +431,15 @@ normalization_quickcheck_fun_ast(Name, Data) ->
               {Cp, R}   -> {Cp, Cp, R}
           end || V <- Data],
     range_fun_ast(Name, Rs, ?Q("yes")).
+
+
+hangul_syllable_type_fun_ast() ->
+    Data = ucd:sort_by_codepoints(ucd_hangul:syllable_type()),
+    Rs = [case V of
+              {{F,T},S} -> {F,T,S};
+              {Cp, S}   -> {Cp, Cp, S}
+          end || V <- Data],
+    range_fun_ast(ucd_hangul_syllable_type, Rs, ?Q("not_applicable")).
 
 
 block_fun_ast(Blocks) ->
