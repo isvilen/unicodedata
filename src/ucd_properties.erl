@@ -2,6 +2,7 @@
 -export([ unicode_data/0
         , common_properties/1
         , decomposition/1
+        , composition/1
         , numeric/1
         , lowercase_mapping/1
         , uppercase_mapping/1
@@ -27,6 +28,14 @@ common_properties(Data) ->
 
 decomposition(Data) ->
     filter(decomposition, Data).
+
+
+composition(Data) ->
+    NonStarters = lists:foldl(fun composition_non_starter/2, sets:new(), Data),
+    Exclusions = sets:from_list(ucd_normalization:composition_exclusions()),
+    lists:foldr(fun (CP, Acc) ->
+                    composition_data(CP, NonStarters, Exclusions, Acc)
+                end, [], Data).
 
 
 numeric(Data) ->
@@ -365,6 +374,25 @@ decomposition_data(Decomp) ->
     end.
 
 decomposition_1(Mappings) -> [ucd:codepoint(M) || M <- Mappings].
+
+
+composition_non_starter({_,_,_,0,_,_,_,_,_,_,_}, Set) ->
+    Set;
+composition_non_starter({CP,_,_,_,_,_,_,_,_,_,_}, Set) when is_integer(CP) ->
+    sets:add_element(CP, Set).
+
+
+composition_data({CP,_,_,0,_,[CP1,CP2],_,_,_,_,_}, NonStarters, Exclusions, Acc) ->
+    case sets:is_element(CP1, NonStarters) of
+        true  -> Acc;
+        false -> case sets:is_element(CP, Exclusions) of
+                     true  -> Acc;
+                     false -> [{{CP1,CP2}, CP} | Acc]
+                 end
+    end;
+
+composition_data(_, _, _, Acc) ->
+    Acc.
 
 
 numeric_data(<<>>, <<>>, <<>>) ->

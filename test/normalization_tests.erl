@@ -19,6 +19,86 @@ quick_check_test_() -> [
                              end))
 ].
 
+nfc_test_() -> [
+    ?_test(foreach_test_data(fun (LineNo, Src, NFC, _, _, _) ->
+                                 normalization_check(LineNo, nfc, NFC, Src)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, NFC, _, _, _) ->
+                                 normalization_check(LineNo, nfc, NFC, NFC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, NFC, NFD, _, _) ->
+                                 normalization_check(LineNo, nfc, NFC, NFD)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, NFKC, _) ->
+                                 normalization_check(LineNo, nfc, NFKC, NFKC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, NFKC, NFKD) ->
+                                 normalization_check(LineNo, nfc, NFKC, NFKD)
+                             end))
+].
+
+nfd_test_() -> [
+    ?_test(foreach_test_data(fun (LineNo, Src, _, NFD, _, _) ->
+                                 normalization_check(LineNo, nfd, NFD, Src)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, NFC, NFD, _, _) ->
+                                 normalization_check(LineNo, nfd, NFD, NFC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, NFD, _, _) ->
+                                 normalization_check(LineNo, nfd, NFD, NFD)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, NFKC, NFKD) ->
+                                 normalization_check(LineNo, nfd, NFKD, NFKC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, _, NFKD) ->
+                                 normalization_check(LineNo, nfd, NFKD, NFKD)
+                             end))
+].
+
+nfkc_test_() -> [
+    ?_test(foreach_test_data(fun (LineNo, Src, _, _, NFKC, _) ->
+                                 normalization_check(LineNo, nfkc, NFKC, Src)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, NFC, _, NFKC, _) ->
+                                 normalization_check(LineNo, nfkc, NFKC, NFC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, NFD, NFKC, _) ->
+                                 normalization_check(LineNo, nfkc, NFKC, NFD)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, NFKC, NFKD) ->
+                                 normalization_check(LineNo, nfkc, NFKC, NFKD)
+                             end))
+].
+
+nfkd_test_() -> [
+    ?_test(foreach_test_data(fun (LineNo, Src, _, _, _, NFKD) ->
+                                 normalization_check(LineNo, nfkd, NFKD, Src)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, NFC, _, _, NFKD) ->
+                                 normalization_check(LineNo, nfkd, NFKD, NFC)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, NFD, _, NFKD) ->
+                                 normalization_check(LineNo, nfkd, NFKD, NFD)
+                             end))
+
+   ,?_test(foreach_test_data(fun (LineNo, _, _, _, NFKC, NFKD) ->
+                                 normalization_check(LineNo, nfkd, NFKD, NFKC)
+                             end))
+].
+
 
 quick_check_test_form(NormForm, LineNo, Src, Data) ->
     case unicodedata_normalization:quick_check(NormForm, Data) of
@@ -42,6 +122,19 @@ quick_check_test_form(NormForm, LineNo, Src, Data) ->
         yes   -> ok;
         no    -> ok;
         maybe -> ok
+    end.
+
+
+normalization_check(LineNo, NormForm, Expected, Data) ->
+    case unicodedata_normalization:normalize(NormForm, Data) of
+        Expected -> ok;
+        Actual   -> erlang:error({assert, [ {file, ?TEST_DATA}
+                                          , {line, LineNo}
+                                          , {normalization, NormForm}
+                                          , {source, Data}
+                                          , {expected, Expected}
+                                          , {actual, Actual}
+                                          ]})
     end.
 
 

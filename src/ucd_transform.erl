@@ -171,6 +171,10 @@ forms({ucd_decomposition, 1}, State0) ->
     {Data, State1} = ucd_data(State0),
     {ucd_codegen:decomposition_funs_ast(Data), State1};
 
+forms({ucd_composition, 2}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {ucd_codegen:composition_funs_ast(Data), State1};
+
 forms({ucd_hangul_syllable_type, 1}, State) ->
     {[ucd_codegen:hangul_syllable_type_fun_ast()], State};
 

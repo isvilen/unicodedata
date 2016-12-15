@@ -1,8 +1,10 @@
 -module(unicodedata_normalization).
 -compile({parse_transform, ucd_transform}).
 -export([ quick_check/2
+        , normalize/2
         , canonical_decomposition/1
         , compatibility_decomposition/1
+        , canonical_composition/1
         , canonical_ordering/1
         ]).
 
@@ -38,6 +40,32 @@ quick_check_2(nfd, CP)  -> ucd_nfd_quick_check(CP);
 quick_check_2(nfkd, CP) -> ucd_nfkd_quick_check(CP).
 
 
+-spec normalize(normalization_form(), string()) -> string().
+normalize(Form, String) ->
+    case quick_check(Form, String) of
+        yes -> String;
+        _   -> normalize_1(Form, String)
+   end.
+
+normalize_1(nfc, String) ->
+    String1 = canonical_decomposition(String),
+    String2 = canonical_ordering(String1),
+    canonical_composition(String2);
+
+normalize_1(nfd, String) ->
+    String1 = canonical_decomposition(String),
+    canonical_ordering(String1);
+
+normalize_1(nfkc, String) ->
+    String1 = compatibility_decomposition(String),
+    String2 = canonical_ordering(String1),
+    canonical_composition(String2);
+
+normalize_1(nfkd, String) ->
+    String1 = compatibility_decomposition(String),
+    canonical_ordering(String1).
+
+
 -spec canonical_decomposition(string()) -> string().
 canonical_decomposition(String) ->
     canonical_decomposition_1(String, []).
@@ -69,6 +97,59 @@ compatibility_decomposition_1([CP | CPs], AccIn) ->
             DCPs      -> push(compatibility_decomposition(DCPs), AccIn)
         end,
     compatibility_decomposition_1(CPs, AccOut).
+
+
+-spec canonical_composition(string()) -> string().
+canonical_composition(String) ->
+    canonical_composition_1(String, undefined, [], []).
+
+
+canonical_composition_1([], undefined, [], Acc) ->
+    lists:reverse(Acc);
+
+canonical_composition_1([], Starter, DecAcc, Acc) ->
+    lists:reverse(push([Starter | lists:reverse(DecAcc)], Acc));
+
+canonical_composition_1([CP | CPs], undefined, [], Acc) ->
+    case ucd_combining_class(CP) of
+        0 -> canonical_composition_1(CPs, CP, [], Acc);
+        _ -> canonical_composition_1(CPs, undefined, [], [CP |Acc])
+    end;
+
+canonical_composition_1([CP | CPs], Starter, [], Acc) ->
+    case composition(Starter, CP) of
+        undefined ->
+            case ucd_combining_class(CP) of
+                0 ->
+                    canonical_composition_1(CPs, CP, [], [Starter | Acc]);
+                _ ->
+                    canonical_composition_1(CPs, Starter, [CP], Acc)
+            end;
+        CCP ->
+            canonical_composition_1(CPs, CCP, [], Acc)
+    end;
+
+canonical_composition_1([CP | CPs], Starter, [DCP | _] = DecAcc, Acc) ->
+    CP_CCC = ucd_combining_class(CP),
+    DCP_CCC = ucd_combining_class(DCP),
+
+    case DCP_CCC >= CP_CCC of
+        true when CP_CCC == 0 ->
+            Acc1 = push([Starter | lists:reverse(DecAcc)], Acc),
+            canonical_composition_1(CPs, CP, [], Acc1);
+        true  ->
+            canonical_composition_1(CPs, Starter, [CP | DecAcc], Acc);
+        false ->
+            case composition(Starter, CP) of
+                undefined when CP_CCC == 0 ->
+                    Acc1 = push([Starter | lists:reverse(DecAcc)], Acc),
+                    canonical_composition_1(CPs, CP, [], Acc1);
+                undefined ->
+                    canonical_composition_1(CPs, Starter, [CP|DecAcc], Acc);
+                CCP ->
+                    canonical_composition_1(CPs, CCP, DecAcc, Acc)
+            end
+    end.
 
 
 -spec canonical_ordering(string()) -> string().
@@ -106,6 +187,13 @@ decomposition(CP) ->
     end.
 
 
+composition(CP1, CP2) ->
+    case ucd_composition(CP1, CP2) of
+        undefined -> hangul_syllable_composition(CP1, CP2);
+        Value     -> Value
+    end.
+
+
 -define(HANGUL_SYLLABLE_BASE,16#ac00).
 -define(HANGUL_SYLLABLE_L_BASE,16#1100).
 -define(HANGUL_SYLLABLE_V_BASE,16#1161).
@@ -129,6 +217,23 @@ hangul_syllable_decomposition_lvt(CP) ->
     LVIdx = (Idx div ?HANGUL_SYLLABLES_T) * ?HANGUL_SYLLABLES_T,
     TIdx = Idx rem ?HANGUL_SYLLABLES_T,
     [?HANGUL_SYLLABLE_BASE + LVIdx, ?HANGUL_SYLLABLE_T_BASE + TIdx].
+
+
+hangul_syllable_composition(CP1, CP2) when CP1 >= 16#1100, CP1 =< 16#1112
+                                         , CP2 >= 16#1161, CP2 =< 16#1175 ->
+    LIdx = CP1 - ?HANGUL_SYLLABLE_L_BASE,
+    VIdx = CP2 - ?HANGUL_SYLLABLE_V_BASE,
+    LVIdx = LIdx * ?HANGUL_SYLLABLES_N + VIdx * ?HANGUL_SYLLABLES_T,
+    ?HANGUL_SYLLABLE_BASE + LVIdx;
+
+hangul_syllable_composition(CP1, CP2) ->
+    case ucd_hangul_syllable_type(CP1) of
+        lv when CP2 >= 16#11a8, CP2 =< 16#11c2 ->
+            TIdx = CP2 - ?HANGUL_SYLLABLE_T_BASE,
+            CP1 + TIdx;
+        _ ->
+            undefined
+    end.
 
 
 push([], Chars)       -> Chars;

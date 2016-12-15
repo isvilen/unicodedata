@@ -25,6 +25,7 @@
         , special_casing_funs_ast/2
         , numeric_funs_ast/2
         , decomposition_funs_ast/1
+        , composition_funs_ast/1
         , nfd_quick_check_fun_ast/1
         , nfc_quick_check_fun_ast/1
         , nfkd_quick_check_fun_ast/1
@@ -403,6 +404,14 @@ decomposition_fun_ast() ->
        ,"    Idx       -> ucd_decomposition_data(Idx)"
        ," end."
        ]).
+
+
+composition_funs_ast(Data) ->
+    Data1 = maps:from_list(ucd_properties:composition(Data)),
+    [?Q(["ucd_composition(CP1, CP2) ->"
+        ,"    maps:get({CP1, CP2}, _@Data1@, undefined)."
+        ])
+    ].
 
 
 nfd_quick_check_fun_ast(NormalizationProperties) ->
