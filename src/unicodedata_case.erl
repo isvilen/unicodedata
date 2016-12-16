@@ -1,5 +1,5 @@
 -module(unicodedata_case).
--compile({parse_transform, ucd_transform}).
+-compile({parse_transform, unicodedata_ucd_transform}).
 -export([ is_lowercase/1
         , is_uppercase/1
         , is_cased/1

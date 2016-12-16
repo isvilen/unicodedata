@@ -1,5 +1,5 @@
 -module(unicodedata_normalization).
--compile({parse_transform, ucd_transform}).
+-compile({parse_transform, unicodedata_ucd_transform}).
 -export([ quick_check/2
         , normalize/2
         , canonical_decomposition/1

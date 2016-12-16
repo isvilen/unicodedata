@@ -1,5 +1,5 @@
 -module(unicodedata_segmentation).
--compile({parse_transform, ucd_transform}).
+-compile({parse_transform, unicodedata_ucd_transform}).
 -export([ grapheme_breaks/3
         , word_breaks/3
         , sentence_breaks/3

@@ -1,5 +1,5 @@
 -module(unicodedata).
--compile({parse_transform, ucd_transform}).
+-compile({parse_transform, unicodedata_ucd_transform}).
 -export([ category/1
         , is_cased_letter/1
         , is_letter/1
