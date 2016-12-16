@@ -139,39 +139,26 @@ normalization_check(LineNo, NormForm, Expected, Data) ->
 
 
 foreach_test_data(Fun) ->
-    IoDev = test_data_iodev(),
-    foreach_line(IoDev,
-                 fun (Line, LineNo) ->
-                         Fields = binary:split(Line, <<";">>, [global]),
-                         [Src, NFC, NFD, NFKC, NFKD | _] = Fields,
-                         Fun(LineNo
-                            ,unicodedata_ucd:parse_codepoints(Src)
-                            ,unicodedata_ucd:parse_codepoints(NFC)
-                            ,unicodedata_ucd:parse_codepoints(NFD)
-                            ,unicodedata_ucd:parse_codepoints(NFKC)
-                            ,unicodedata_ucd:parse_codepoints(NFKD))
-                 end).
+    unicodedata_ucd:fold_lines(test_fun(Fun), test_data_file(), 1, []).
 
+test_fun(Fun) ->
+    {ok, MP} = re:compile(";"),
+    fun ([C|_], LineNo) when C == $#; C == $@ ->
+            LineNo+1;
+        (Line, LineNo) ->
+            Fields = re:split(Line, MP),
+            [Src, NFC, NFD, NFKC, NFKD | _] = Fields,
+            Fun(LineNo
+               ,unicodedata_ucd:parse_codepoints(Src)
+               ,unicodedata_ucd:parse_codepoints(NFC)
+               ,unicodedata_ucd:parse_codepoints(NFD)
+               ,unicodedata_ucd:parse_codepoints(NFKC)
+               ,unicodedata_ucd:parse_codepoints(NFKD)),
+            LineNo+1
+    end.
 
-foreach_line(IoDev, Fun) -> foreach_line(IoDev, Fun, 1, io:get_line(IoDev, "")).
-
-foreach_line(_IoDev, _Fun, _LineNo, eof) ->
-    ok;
-
-foreach_line(_IoDev, _Fun, _LineNo, {error, Error}) ->
-    exit(Error);
-
-foreach_line(IoDev, Fun, LineNo, <<C,_/binary>>) when C == $#; C == $@ ->
-    foreach_line(IoDev, Fun, LineNo+1, io:get_line(IoDev, ""));
-
-foreach_line(IoDev, Fun, LineNo, Line) ->
-    Fun(Line, LineNo),
-    foreach_line(IoDev, Fun, LineNo+1, io:get_line(IoDev, "")).
-
-
-test_data_iodev() ->
+test_data_file() ->
     {_, _, ModuleFile} = code:get_object_code(?MODULE),
     Base = filename:dirname(ModuleFile),
-    DataFile = filename:join([Base, "data", ?TEST_DATA]),
-    {ok, IoDev} = file:open(DataFile, [read, binary]),
-    IoDev.
+    ZipFile = filename:join([Base, "data", ?TEST_DATA ++ ".zip"]),
+    {ZipFile, ?TEST_DATA}.

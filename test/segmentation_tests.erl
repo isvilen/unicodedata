@@ -23,54 +23,37 @@ line_breaks_test() ->
 
 
 run_tests(File, Fun) ->
+    TestFun = test_fun(File, Fun),
+    TestFile = test_data_file(File),
+    unicodedata_ucd:fold_lines(TestFun, TestFile, 1, [strip_comment]).
+
+
+test_fun(File, Fun) ->
     AccFun = fun (LineOrBreak, Acc) -> Acc ++ [LineOrBreak] end,
     BreakFun = fun (Text) -> lists:flatten(Fun(AccFun, [], Text)) end,
-    foreach_line(test_data_iodev(File),
-                 fun (LineNo, Expected, Text) ->
-                         case BreakFun(Text) of
-                             Expected ->
-                                 ok;
-                             Actual ->
-                                 erlang:error({assert, [ {file, File}
-                                                       , {line, LineNo}
-                                                       , {expected, Expected}
-                                                       , {actual, Actual}
-                                                       ]})
-                         end
-                 end).
+
+    fun ([C|_], LineNo) when C == $#; C == $@ ->
+            LineNo + 1;
+        (Line, LineNo) ->
+            Expected = fields(Line),
+            Text = [F || F <- Expected, F /= break],
+            case BreakFun(Text) of
+                Expected -> ok;
+                Actual   -> erlang:error({assert, [ {file, File}
+                                                  , {line, LineNo}
+                                                  , {expected, Expected}
+                                                  , {actual, Actual}
+                                                  ]})
+            end,
+            LineNo + 1
+    end.
 
 
-foreach_line(IoDev, Fun) -> foreach_line(IoDev, Fun, 1, io:get_line(IoDev, "")).
-
-foreach_line(_IoDev, _Fun, _LineNo, eof) ->
-    ok;
-
-foreach_line(_IoDev, _Fun, _LineNo, {error, Error}) ->
-    exit(Error);
-
-foreach_line(IoDev, Fun, LineNo, [C | _]) when C == $#; C == $@ ->
-    foreach_line(IoDev, Fun, LineNo+1, io:get_line(IoDev, ""));
-
-foreach_line(IoDev, Fun, LineNo, Line) ->
-    Expected = fields(strip_comment(Line)),
-    Text = [F || F <- Expected, F /= break],
-    Fun(LineNo, Expected, Text),
-    foreach_line(IoDev, Fun, LineNo+1, io:get_line(IoDev, "")).
-
-
-test_data_iodev(File) ->
+test_data_file(File) ->
     {_, _, ModuleFile} = code:get_object_code(?MODULE),
     Base = filename:dirname(ModuleFile),
-    DataFile = filename:join([Base, "data", File]),
-    {ok, IoDev} = file:open(DataFile, [read]),
-    IoDev.
-
-
-strip_comment(Line) ->
-    case string:rchr(Line, $#) of
-        0   -> Line;
-        Pos -> string:sub_string(Line, 1, Pos-1)
-    end.
+    ZipFile = filename:join([Base, "data", File ++ ".zip"]),
+    {ZipFile, File}.
 
 
 fields(Line) ->

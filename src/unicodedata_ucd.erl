@@ -61,8 +61,10 @@ files() ->
     lists:flatmap(fun list_files/1, data_files()).
 
 
-file(FileName) ->
-    ZipFileName = zip_file(FileName),
+file({ZipFileName, FileName}) -> file(ZipFileName, FileName);
+file(FileName)                -> file(zip_file(FileName), FileName).
+
+file(ZipFileName, FileName) ->
     case zip:unzip(ZipFileName, [{file_list, [FileName]}, memory]) of
         {ok, [{_, Data}]} -> Data;
         _                 -> error(badarg)
@@ -75,15 +77,16 @@ fold_lines(Fun, FileName) ->
 
 
 fold_lines(Fun, FileName, Acc) ->
-    fold_lines(Fun, FileName, Acc, [strip_comment, fields]).
+    fold_lines(Fun, FileName, Acc, [skip_empty, strip_comment, fields]).
 
 
 fold_lines(Fun, FileName, Acc, Opts) ->
     Data = file(FileName),
     StripComment = proplists:get_bool(strip_comment, Opts),
     SplitFields = proplists:get_bool(fields, Opts),
+    SkipEmpty = proplists:get_bool(skip_empty, Opts),
     FoldFun = fold_lines_fun(Fun, StripComment, SplitFields),
-    fold_lines_1(FoldFun, Acc, binary:split(Data, <<"\n">>)).
+    fold_lines_1(FoldFun, Acc, binary:split(Data, <<"\n">>), SkipEmpty).
 
 
 fold_lines_fun(Fun, true, true) ->
@@ -101,16 +104,20 @@ fold_lines_fun(Fun, false, false) ->
     Fun.
 
 
-fold_lines_1(_, Acc, [<<>>]) ->
+fold_lines_1(_, Acc, [<<>>], _) ->
     Acc;
 
-fold_lines_1(Fun, Acc0, [Bin, Rest]) ->
+fold_lines_1(Fun, Acc0, [Bin, Rest], true) ->
     Acc1 = case string:strip(binary_to_list(Bin), right, $\n) of
                ""       -> Acc0;
                "#" ++ _ -> Acc0;
                Data     -> Fun(Data, Acc0)
            end,
-    fold_lines_1(Fun, Acc1, binary:split(Rest, <<"\n">>)).
+    fold_lines_1(Fun, Acc1, binary:split(Rest, <<"\n">>), true);
+
+fold_lines_1(Fun, Acc0, [Bin, Rest], false) ->
+    Data = string:strip(binary_to_list(Bin), right, $\n),
+    fold_lines_1(Fun, Fun(Data, Acc0), binary:split(Rest, <<"\n">>), false).
 
 
 data_dir() ->
