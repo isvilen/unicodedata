@@ -172,6 +172,9 @@ forms({ucd_bidi_mirrored, 1}, State0) ->
             ],
     ensure_common_properties_index(Forms, State2);
 
+forms({ucd_bidi_mirroring_glyph, 1}, State) ->
+    {[bidi_mirroring_glyph_fun_ast()], State};
+
 forms({ucd_numeric, 1}, State0) ->
     {Data, State1} = numeric_data(State0),
     {[ numeric_index_fun_ast(Data)
@@ -683,6 +686,12 @@ bidi_mirrored_fun_ast() ->
        ,"    undefined -> ucd_bidi_mirrored_range_data(CP);"
        ,"    Idx       -> ucd_bidi_mirrored_data(Idx)"
        ,"  end."]).
+
+
+bidi_mirroring_glyph_fun_ast() ->
+    Data = unicodedata_ucd:bidi_mirroring(),
+    Rs = range_values(unicodedata_ucd:sort_by_codepoints(Data)),
+    range_fun_ast(ucd_bidi_mirroring_glyph, Rs, ?Q("none")).
 
 
 case_mapping_funs_ast(MappingProperties, Name, IdxName, DataName) ->

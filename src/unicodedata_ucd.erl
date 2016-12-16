@@ -21,6 +21,7 @@
         , bidi_classes/0
         , bidi_class_name/1
         , bidi_class_defaults/0
+        , bidi_mirroring/0
         , prop_list/0
         , prop_list_types/0
         , blocks/0
@@ -344,6 +345,12 @@ bidi_class_defaults() ->
              ,{16#20A0, 16#20CF, 'ET'}
              ],
     lists:sort(fun ({_,V1,_}, {_,V2,_}) -> V1 =< V2 end, Ranges).
+
+
+bidi_mirroring() ->
+    fold_lines(fun ([CP1, CP2])->
+                    {parse_codepoint(CP1), parse_codepoint(CP2)}
+               end, "BidiMirroring.txt").
 
 
 prop_list() ->

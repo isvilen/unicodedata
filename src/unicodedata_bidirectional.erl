@@ -5,7 +5,8 @@
         , is_bidirectional_weak/1
         , is_bidirectional_neutral/1
         , is_bidirectional_explicit/1
-        , is_bidirectional_mirrored/1
+        , is_mirrored/1
+        , mirroring_glyph/1
         ]).
 
 
@@ -87,9 +88,14 @@ is_bidirectional_explicit(CP) ->
                                           ]).
 
 
--spec is_bidirectional_mirrored(char()) -> boolean().
-is_bidirectional_mirrored(CP) ->
+-spec is_mirrored(char()) -> boolean().
+is_mirrored(CP) ->
     ucd_bidi_mirrored(CP).
+
+
+-spec mirroring_glyph(char()) -> char() | none.
+mirroring_glyph(CP) ->
+    ucd_bidi_mirroring_glyph(CP).
 
 
 -ifdef(TEST).
@@ -155,10 +161,18 @@ bidirectional_class_test_() -> [
    ,?_assert(not is_bidirectional_explicit($A))
 ].
 
-bidirectional_mirrored_test_() -> [
-    ?_assert(is_bidirectional_mirrored($[)),
-    ?_assert(is_bidirectional_mirrored($])),
-    ?_assert(not is_bidirectional_mirrored($*))
+is_mirrored_test_() -> [
+    ?_assert(is_mirrored($[))
+   ,?_assert(is_mirrored($]))
+   ,?_assert(not is_mirrored($*))
+].
+
+mirroring_glyph_test_() -> [
+    ?_assertEqual($], mirroring_glyph($[))
+   ,?_assertEqual($[, mirroring_glyph($]))
+   ,?_assertEqual($«, mirroring_glyph($»))
+   ,?_assertEqual($», mirroring_glyph($«))
+   ,?_assertEqual(none, mirroring_glyph($*))
 ].
 
 -endif.
