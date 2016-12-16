@@ -295,6 +295,12 @@ forms({ucd_codepoint_range, 1}, State0) ->
     {Ranges, State1} = ranges_data(State0),
     {[codepoint_range_fun_ast(Ranges)], State1};
 
+forms({ucd_east_asian_width, 1}, State) ->
+    {[ east_asian_width_data_fun_ast()
+     , east_asian_width_defaults_fun_ast()
+     , east_asian_width_fun_ast()
+     ], State};
+
 forms(_, State) ->
     {[], State}.
 
@@ -825,19 +831,12 @@ nfkc_quick_check_fun_ast(NormalizationProperties) ->
 
 
 normalization_quickcheck_fun_ast(Name, Data) ->
-    Rs = [case V of
-              {{F,T},R} -> {F,T,R};
-              {Cp, R}   -> {Cp, Cp, R}
-          end || V <- Data],
-    range_fun_ast(Name, Rs, ?Q("yes")).
+    range_fun_ast(Name, range_values(Data), ?Q("yes")).
 
 
 hangul_syllable_type_fun_ast() ->
     Data = unicodedata_ucd:hangul_syllable_type(),
-    Rs = [case V of
-              {{F,T},S} -> {F,T,S};
-              {Cp, S}   -> {Cp, Cp, S}
-          end || V <- unicodedata_ucd:sort_by_codepoints(Data)],
+    Rs = range_values(unicodedata_ucd:sort_by_codepoints(Data)),
     range_fun_ast(ucd_hangul_syllable_type, Rs, ?Q("not_applicable")).
 
 
@@ -854,6 +853,23 @@ codepoint_range_value(Range) ->
     {From, To} = element(1, Range),
     Name = unicodedata_ucd:range_name(element(2, Range)),
     {From, To, Name}.
+
+
+east_asian_width_data_fun_ast() ->
+    RangeValues = range_values(unicodedata_ucd:east_asian_width()),
+    range_fun_ast(ucd_east_asian_width_data, RangeValues).
+
+east_asian_width_defaults_fun_ast() ->
+    DefaultValues = range_values(unicodedata_ucd:east_asian_width_defaults()),
+    range_fun_ast(ucd_east_asian_width_defaults, DefaultValues, ?Q("neutral")).
+
+east_asian_width_fun_ast() ->
+    ?Q(["ucd_east_asian_width(CP) ->"
+       ,"  case ucd_east_asian_width_data(CP) of"
+       ,"    undefined -> ucd_east_asian_width_defaults(CP);"
+       ,"    Value     -> Value"
+       ,"  end."
+       ]).
 
 
 grapheme_break_fun_ast() ->
@@ -877,10 +893,7 @@ line_break_fun_ast() ->
 
 
 segmentation_fun_ast(Name, Data, Default) ->
-    RangeValues = [case V of
-                       {{F,T},R} -> {F,T,R};
-                       {Cp, R}   -> {Cp, Cp, R}
-                   end || V <- unicodedata_ucd:sort_by_codepoints(Data)],
+    RangeValues = range_values(unicodedata_ucd:sort_by_codepoints(Data)),
     range_fun_ast(Name, RangeValues, ?Q("_@Default@")).
 
 
@@ -1026,6 +1039,10 @@ compact_ranges([H|T], [{Cp1, Cp2}=Range | Acc]) ->
         Cp ->
             compact_ranges(T, [{Cp, Cp}, Range | Acc])
     end.
+
+
+range_values(Data) ->
+    [case V of {{F,T},R} -> {F,T,R}; {Cp, R} -> {Cp, Cp, R} end || V <- Data].
 
 
 -ifdef(TEST).

@@ -18,6 +18,7 @@
         , codepoint_block/1
         , to_uppercase/1
         , to_lowercase/1
+        , east_asian_width/1
         ]).
 
 -type category() :: uppercase_letter
@@ -59,7 +60,15 @@
                   | unassigned.
 
 
+-type east_asian_width() :: ambiguous
+                          | full_width
+                          | half_width
+                          | neutral
+                          | narrow
+                          | wide.
+
 -export_type([ category/0
+             , east_asian_width/0
              ]).
 
 
@@ -221,6 +230,11 @@ to_lowercase(String) ->
     unicodedata_case:to_lowercase(String).
 
 
+-spec east_asian_width(char()) -> east_asian_width().
+east_asian_width(CP) ->
+    ucd_east_asian_width(CP).
+
+
 normalize_block_name(Name) ->
     string:to_lower([C || C <- Name, C /= $\s, C /= $-, C /= $_]).
 
@@ -375,6 +389,32 @@ codepoint_block_test_() -> [
    ,?_assertEqual(<<"Private Use Area">>, codepoint_block(16#e000))
 
    ,?_assertEqual(no_block, codepoint_block(16#E00FF))
+].
+
+east_asian_width_test_() -> [
+    ?_assertMatch(neutral,   east_asian_width(16#0000))
+   ,?_assertMatch(narrow,    east_asian_width(16#0020))
+   ,?_assertMatch(neutral,   east_asian_width(16#007f))
+   ,?_assertMatch(ambiguous, east_asian_width(16#00a1))
+   ,?_assertMatch(narrow,    east_asian_width(16#00a2))
+   ,?_assertMatch(neutral,   east_asian_width(16#2011))
+   ,?_assertMatch(ambiguous, east_asian_width(16#2013))
+   ,?_assertMatch(half_width,east_asian_width(16#20a9))
+   ,?_assertMatch(ambiguous, east_asian_width(16#25e2))
+   ,?_assertMatch(neutral,   east_asian_width(16#25e6))
+   ,?_assertMatch(wide,      east_asian_width(16#2e80))
+   ,?_assertMatch(wide,      east_asian_width(16#a4c6))
+   ,?_assertMatch(neutral,   east_asian_width(16#a4d0))
+   ,?_assertMatch(wide,      east_asian_width(16#ac00))
+   ,?_assertMatch(wide,      east_asian_width(16#d7a3))
+   ,?_assertMatch(full_width,east_asian_width(16#ff01))
+   ,?_assertMatch(half_width,east_asian_width(16#ff61))
+   ,?_assertMatch(neutral,   east_asian_width(16#fff9))
+   ,?_assertMatch(neutral,   east_asian_width(16#1f890))
+   ,?_assertMatch(wide,      east_asian_width(16#1f9C0))
+   ,?_assertMatch(wide,      east_asian_width(16#20000))
+   ,?_assertMatch(neutral,   east_asian_width(16#e0001))
+   ,?_assertMatch(ambiguous, east_asian_width(16#e0100))
 ].
 
 -endif.
