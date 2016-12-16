@@ -1,12 +1,6 @@
 -module(ucd_properties).
 -export([ unicode_data/0
-        , common_properties/1
-        , decomposition/1
-        , composition/1
-        , numeric/1
-        , lowercase_mapping/1
-        , uppercase_mapping/1
-        , titlecase_mapping/1
+        , codepoints/1
         , ranges/1
         , range_name/1
         , categories/0
@@ -14,44 +8,16 @@
         , bidi_classes/0
         , bidi_class_name/1
         , bidi_class_defaults/0
-        , properties_list/0
-        , properties_list_types/0
+        , prop_list/0
+        , prop_list_types/0
         ]).
 
 unicode_data() ->
     lists:reverse(ucd:fold_lines(fun unicode_data/2, "UnicodeData.txt", [])).
 
 
-common_properties(Data) ->
-    filter(common_properties, Data).
-
-
-decomposition(Data) ->
-    filter(decomposition, Data).
-
-
-composition(Data) ->
-    NonStarters = lists:foldl(fun composition_non_starter/2, sets:new(), Data),
-    Exclusions = sets:from_list(ucd_normalization:composition_exclusions()),
-    lists:foldr(fun (CP, Acc) ->
-                    composition_data(CP, NonStarters, Exclusions, Acc)
-                end, [], Data).
-
-
-numeric(Data) ->
-    filter(numeric, Data).
-
-
-lowercase_mapping(Data) ->
-    filter(lowercase_mapping, Data).
-
-
-uppercase_mapping(Data) ->
-    filter(uppercase_mapping, Data).
-
-
-titlecase_mapping(Data) ->
-    filter(titlecase_mapping, Data).
+codepoints(Data) ->
+    [D || D <- Data, is_integer(element(1,D))].
 
 
 ranges(Data) ->
@@ -191,49 +157,49 @@ bidi_class_defaults() ->
     lists:sort(fun ({_,V1,_}, {_,V2,_}) -> V1 =< V2 end, Ranges).
 
 
-properties_list() ->
+prop_list() ->
     ucd:fold_lines(fun ([CP, Prop]) ->
-                       {ucd:codepoint_or_range(CP), properties_list(Prop)}
+                       {ucd:codepoint_or_range(CP), prop_list(Prop)}
                    end, "PropList.txt").
 
-properties_list(<<"White_Space ">>)             -> white_space;
-properties_list(<<"Bidi_Control ">>)            -> bidi_control;
-properties_list(<<"Join_Control ">>)            -> join_control;
-properties_list(<<"Dash ">>)                    -> dash;
-properties_list(<<"Hyphen ">>)                  -> hyphen;
-properties_list(<<"Quotation_Mark ">>)          -> quotation_mark;
-properties_list(<<"Terminal_Punctuation ">>)    -> terminal_punctuation;
-properties_list(<<"Other_Math ">>)              -> other_math;
-properties_list(<<"Hex_Digit ">>)               -> hex_digit;
-properties_list(<<"ASCII_Hex_Digit ">>)         -> ascii_hex_digit;
-properties_list(<<"Other_Alphabetic ">>)        -> other_alphabetic;
-properties_list(<<"Ideographic ">>)             -> ideographic;
-properties_list(<<"Diacritic ">>)               -> diacritic;
-properties_list(<<"Extender ">>)                -> extender;
-properties_list(<<"Other_Lowercase ">>)         -> other_lowercase;
-properties_list(<<"Other_Uppercase ">>)         -> other_uppercase;
-properties_list(<<"Noncharacter_Code_Point ">>) -> noncharacter_code_point;
-properties_list(<<"Other_Grapheme_Extend ">>)   -> other_grapheme_extend;
-properties_list(<<"IDS_Binary_Operator ">>)     -> ids_binary_operator;
-properties_list(<<"IDS_Trinary_Operator ">>)    -> ids_trinary_operator;
-properties_list(<<"Radical ">>)                 -> radical;
-properties_list(<<"Unified_Ideograph ">>)       -> unified_ideograph;
-properties_list(<<"Deprecated ">>)              -> deprecated;
-properties_list(<<"Soft_Dotted ">>)             -> soft_dotted;
-properties_list(<<"Logical_Order_Exception ">>) -> logical_order_exception;
-properties_list(<<"Other_ID_Start ">>)          -> other_id_start;
-properties_list(<<"Other_ID_Continue ">>)       -> other_id_continue;
-properties_list(<<"Sentence_Terminal ">>)       -> sentence_terminal;
-properties_list(<<"Variation_Selector ">>)      -> variation_selector;
-properties_list(<<"Pattern_White_Space ">>)     -> pattern_white_space;
-properties_list(<<"Pattern_Syntax ">>)          -> pattern_syntax;
-properties_list(<<"Prepended_Concatenation_Mark ">>) ->
+prop_list(<<"White_Space ">>)             -> white_space;
+prop_list(<<"Bidi_Control ">>)            -> bidi_control;
+prop_list(<<"Join_Control ">>)            -> join_control;
+prop_list(<<"Dash ">>)                    -> dash;
+prop_list(<<"Hyphen ">>)                  -> hyphen;
+prop_list(<<"Quotation_Mark ">>)          -> quotation_mark;
+prop_list(<<"Terminal_Punctuation ">>)    -> terminal_punctuation;
+prop_list(<<"Other_Math ">>)              -> other_math;
+prop_list(<<"Hex_Digit ">>)               -> hex_digit;
+prop_list(<<"ASCII_Hex_Digit ">>)         -> ascii_hex_digit;
+prop_list(<<"Other_Alphabetic ">>)        -> other_alphabetic;
+prop_list(<<"Ideographic ">>)             -> ideographic;
+prop_list(<<"Diacritic ">>)               -> diacritic;
+prop_list(<<"Extender ">>)                -> extender;
+prop_list(<<"Other_Lowercase ">>)         -> other_lowercase;
+prop_list(<<"Other_Uppercase ">>)         -> other_uppercase;
+prop_list(<<"Noncharacter_Code_Point ">>) -> noncharacter_code_point;
+prop_list(<<"Other_Grapheme_Extend ">>)   -> other_grapheme_extend;
+prop_list(<<"IDS_Binary_Operator ">>)     -> ids_binary_operator;
+prop_list(<<"IDS_Trinary_Operator ">>)    -> ids_trinary_operator;
+prop_list(<<"Radical ">>)                 -> radical;
+prop_list(<<"Unified_Ideograph ">>)       -> unified_ideograph;
+prop_list(<<"Deprecated ">>)              -> deprecated;
+prop_list(<<"Soft_Dotted ">>)             -> soft_dotted;
+prop_list(<<"Logical_Order_Exception ">>) -> logical_order_exception;
+prop_list(<<"Other_ID_Start ">>)          -> other_id_start;
+prop_list(<<"Other_ID_Continue ">>)       -> other_id_continue;
+prop_list(<<"Sentence_Terminal ">>)       -> sentence_terminal;
+prop_list(<<"Variation_Selector ">>)      -> variation_selector;
+prop_list(<<"Pattern_White_Space ">>)     -> pattern_white_space;
+prop_list(<<"Pattern_Syntax ">>)          -> pattern_syntax;
+prop_list(<<"Prepended_Concatenation_Mark ">>) ->
     prepended_concatenation_mark;
-properties_list(<<"Other_Default_Ignorable_Code_Point ">>) ->
+prop_list(<<"Other_Default_Ignorable_Code_Point ">>) ->
     other_default_ignorable_code_point.
 
 
-properties_list_types() ->
+prop_list_types() ->
     [ white_space
     , bidi_control
     , join_control
@@ -376,25 +342,6 @@ decomposition_data(Decomp) ->
 decomposition_1(Mappings) -> [ucd:codepoint(M) || M <- Mappings].
 
 
-composition_non_starter({_,_,_,0,_,_,_,_,_,_,_}, Set) ->
-    Set;
-composition_non_starter({CP,_,_,_,_,_,_,_,_,_,_}, Set) when is_integer(CP) ->
-    sets:add_element(CP, Set).
-
-
-composition_data({CP,_,_,0,_,[CP1,CP2],_,_,_,_,_}, NonStarters, Exclusions, Acc) ->
-    case sets:is_element(CP1, NonStarters) of
-        true  -> Acc;
-        false -> case sets:is_element(CP, Exclusions) of
-                     true  -> Acc;
-                     false -> [{{CP1,CP2}, CP} | Acc]
-                 end
-    end;
-
-composition_data(_, _, _, Acc) ->
-    Acc.
-
-
 numeric_data(<<>>, <<>>, <<>>) ->
     undefined;
 
@@ -418,33 +365,3 @@ bidi_mirrored(<<"N">>) -> false.
 
 case_mapping(<<>>) -> undefined;
 case_mapping(Bin)  -> ucd:codepoint(Bin).
-
-
-filter(common_properties, Data) ->
-    [{Id, Name, Cat, Comb, Bidi, Mirrored}
-     || {Id,Name,Cat,Comb,Bidi,_,_,Mirrored,_,_,_} <- Data, is_integer(Id)];
-
-filter(decomposition, Data) ->
-    [{Id, Decomp} || {Id,_,_,_,_,Decomp,_,_,_,_,_} <- Data
-     , is_integer(Id)
-     , Decomp /= undefined];
-
-filter(numeric, Data) ->
-    [{Id, Numeric} || {Id,_,_,_,_,_,Numeric,_,_,_,_} <- Data
-     , is_integer(Id)
-     , Numeric /= undefined];
-
-filter(uppercase_mapping, Data) ->
-    [{Id, Upper} || {Id,_,_,_,_,_,_,_,Upper,_,_} <- Data
-     , is_integer(Id)
-     , Upper /= undefined];
-
-filter(lowercase_mapping, Data) ->
-    [{Id, Lower} || {Id,_,_,_,_,_,_,_,_,Lower,_} <- Data
-     , is_integer(Id)
-     , Lower /= undefined];
-
-filter(titlecase_mapping, Data) ->
-    [{Id, Title} || {Id,_,_,_,_,_,_,_,_,_,Title} <- Data
-     , is_integer(Id)
-     , Title /= undefined].

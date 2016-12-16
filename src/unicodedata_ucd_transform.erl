@@ -26,7 +26,7 @@ collect_ucd_funs_1(AST, UcdFuns) ->
         ?Q("ucd_has_property(_@CP, _@V)") ->
             collect_ucd_property_fun(AST, CP, V, UcdFuns,
                                      ucd_has_property,
-                                     fun ucd_properties:properties_list_types/0);
+                                     fun ucd_properties:prop_list_types/0);
         ?Q("ucd_grapheme_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_grapheme_break,
@@ -127,7 +127,7 @@ forms(Funs) ->
              , common_properties => undefined
              , ranges => undefined
              , blocks => undefined
-             , properties_list => undefined
+             , prop_list => undefined
              , special_casing => undefined
              , normalization_properties => undefined
              , generated_functions => sets:new()
@@ -173,8 +173,11 @@ forms({ucd_bidi_mirrored, 1}, State0) ->
     ensure_common_properties_index(Forms, State2);
 
 forms({ucd_numeric, 1}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {numeric_funs_ast(Data, ucd_unihan:numeric_data()), State1};
+    {Data, State1} = numeric_data(State0),
+    {[ numeric_index_fun_ast(Data)
+     , numeric_data_fun_ast(Data)
+     , numeric_fun_ast(ucd_unihan:numeric_data())
+     ], State1};
 
 forms({ucd_blocks, 0}, State0) ->
     {Blocks, State1} = blocks_data(State0),
@@ -186,12 +189,19 @@ forms({ucd_block, 1}, State0) ->
     {[block_fun_ast(Blocks)], State1};
 
 forms({ucd_decomposition, 1}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {decomposition_funs_ast(Data), State1};
+    {Data, State1} = decomposition_data(State0),
+    {[ decomposition_index_fun_ast(Data)
+     , decomposition_data_fun_ast(Data)
+     , decomposition_fun_ast()
+     ]
+    , State1};
 
 forms({ucd_composition, 2}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {composition_funs_ast(Data), State1};
+    {Data, State1} = composition_data(State0),
+    {[?Q(["ucd_composition(CP1, CP2) ->"
+         ,"    maps:get({CP1, CP2}, _@Data@, undefined)."
+         ])]
+    , State1};
 
 forms({ucd_hangul_syllable_type, 1}, State) ->
     {[hangul_syllable_type_fun_ast()], State};
@@ -233,16 +243,28 @@ forms({ucd_has_property, Property}, State) ->
     has_property_forms(Name, Property, State);
 
 forms({ucd_lowercase_mapping, 1}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {lowercase_mapping_funs_ast(Data), State1};
+    {Data, State1} = lowercase_mapping_data(State0),
+    {case_mapping_funs_ast(Data
+                          ,ucd_lowercase_mapping
+                          ,ucd_lowercase_mapping_idx
+                          ,ucd_lowercase_mapping_data)
+    , State1};
 
 forms({ucd_uppercase_mapping, 1}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {uppercase_mapping_funs_ast(Data), State1};
+    {Data, State1} = uppercase_mapping_data(State0),
+    {case_mapping_funs_ast(Data
+                          ,ucd_uppercase_mapping
+                          ,ucd_uppercase_mapping_idx
+                          ,ucd_uppercase_mapping_data)
+    , State1};
 
 forms({ucd_titlecase_mapping, 1}, State0) ->
-    {Data, State1} = ucd_data(State0),
-    {titlecase_mapping_funs_ast(Data), State1};
+    {Data, State1} = titlecase_mapping_data(State0),
+    {case_mapping_funs_ast(Data
+                          ,ucd_titlecase_mapping
+                          ,ucd_titlecase_mapping_idx
+                          ,ucd_titlecase_mapping_data)
+    , State1};
 
 forms({ucd_special_casing_upper, 1}, State) ->
     ucd_special_casing_forms(upper, State);
@@ -300,7 +322,7 @@ is_category_forms(Name, Categories, State0) ->
 
 
 has_property_forms(Name, Property, State0) ->
-    {Data, State1} = ucd_proplist(State0),
+    {Data, State1} = prop_list_data(State0),
     Forms = [has_property_fun_ast(Name, Data, Property)],
     {Forms, State1}.
 
@@ -321,9 +343,15 @@ ucd_data(#{data := Data}=State) ->
     {Data, State}.
 
 
+codepoints_data(State) ->
+    {Data, State1} = ucd_data(State),
+    {ucd_properties:codepoints(Data), State1}.
+
+
 common_properties_data(#{common_properties := undefined}=State0) ->
-    {Data, State1} = ucd_data(State0),
-    Properties = ucd_properties:common_properties(Data),
+    {Data, State1} = codepoints_data(State0),
+    Properties = [{Id, Name, Cat, Comb, Bidi, Mirrored}
+                  || {Id,Name,Cat,Comb,Bidi,_,_,Mirrored,_,_,_} <- Data],
     {Properties, State1#{common_properties := Properties}};
 
 common_properties_data(#{common_properties := Properties}=State) ->
@@ -347,11 +375,11 @@ blocks_data(#{blocks := Blocks}=State) ->
     {Blocks, State}.
 
 
-ucd_proplist(#{properties_list := undefined}=State) ->
-    PropList = ucd_properties:properties_list(),
-    {PropList, State#{properties_list := PropList}};
+prop_list_data(#{prop_list := undefined}=State) ->
+    PropList = ucd_properties:prop_list(),
+    {PropList, State#{prop_list := PropList}};
 
-ucd_proplist(#{properties_list := PropList}=State) ->
+prop_list_data(#{prop_list := PropList}=State) ->
     {PropList, State}.
 
 
@@ -369,6 +397,70 @@ normalization_properties(#{normalization_properties := undefined}=State0) ->
 
 normalization_properties(#{normalization_properties := Data}=State) ->
     {Data, State}.
+
+
+numeric_data(State0) ->
+    {Data, State1} = codepoints_data(State0),
+    Result = [{Id, Numeric} || {Id,_,_,_,_,_,Numeric,_,_,_,_} <- Data
+                             , Numeric /= undefined],
+    {Result, State1}.
+
+
+uppercase_mapping_data(State0) ->
+    {Data, State1} = codepoints_data(State0),
+    Result = [{Id, Upper} || {Id,_,_,_,_,_,_,_,Upper,_,_} <- Data
+                          , Upper /= undefined],
+    {Result, State1}.
+
+
+lowercase_mapping_data(State0) ->
+    {Data, State1} = codepoints_data(State0),
+    Result = [{Id, Lower} || {Id,_,_,_,_,_,_,_,_,Lower,_} <- Data
+                           , Lower /= undefined],
+    {Result, State1}.
+
+
+titlecase_mapping_data(State0) ->
+    {Data, State1} = codepoints_data(State0),
+    Result = [{Id, Title} || {Id,_,_,_,_,_,_,_,_,_,Title} <- Data
+                           , Title /= undefined],
+    {Result, State1}.
+
+
+decomposition_data(State0) ->
+    {Data, State1} = codepoints_data(State0),
+    Result = [{Id, Decomp} || {Id,_,_,_,_,Decomp,_,_,_,_,_} <- Data
+                            , Decomp /= undefined],
+    {Result, State1}.
+
+
+composition_data(State0) ->
+    {Data, State1} = ucd_data(State0),
+    NonStarters = lists:foldl(fun composition_non_starter/2, sets:new(), Data),
+    Exclusions = sets:from_list(ucd_normalization:composition_exclusions()),
+    {lists:foldr(fun (CP, Acc) ->
+                      composition_data(CP, NonStarters, Exclusions, Acc)
+                 end, #{}, Data)
+    , State1}.
+
+
+composition_non_starter({_,_,_,0,_,_,_,_,_,_,_}, Set) ->
+    Set;
+composition_non_starter({CP,_,_,_,_,_,_,_,_,_,_}, Set) when is_integer(CP) ->
+    sets:add_element(CP, Set).
+
+
+composition_data({CP,_,_,0,_,[CP1,CP2],_,_,_,_,_}, NonStarters, Exclusions, Acc) ->
+    case sets:is_element(CP1, NonStarters) of
+        true  -> Acc;
+        false -> case sets:is_element(CP, Exclusions) of
+                     true  -> Acc;
+                     false -> maps:put({CP1,CP2}, CP, Acc)
+                 end
+    end;
+
+composition_data(_, _, _, Acc) ->
+    Acc.
 
 
 ucd_fun_name(Prefix, Parts) ->
@@ -587,26 +679,6 @@ bidi_mirrored_fun_ast() ->
        ,"  end."]).
 
 
-lowercase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(ucd_properties:lowercase_mapping(Data)
-                         ,ucd_lowercase_mapping
-                         ,ucd_lowercase_mapping_idx
-                         ,ucd_lowercase_mapping_data).
-
-
-uppercase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(ucd_properties:uppercase_mapping(Data)
-                         ,ucd_uppercase_mapping
-                         ,ucd_uppercase_mapping_idx
-                         ,ucd_uppercase_mapping_data).
-
-titlecase_mapping_funs_ast(Data) ->
-    case_mapping_funs_ast(ucd_properties:titlecase_mapping(Data)
-                         ,ucd_titlecase_mapping
-                         ,ucd_titlecase_mapping_idx
-                         ,ucd_titlecase_mapping_data).
-
-
 case_mapping_funs_ast(MappingProperties, Name, IdxName, DataName) ->
     [case_mapping_index_fun_ast(IdxName, MappingProperties)
     ,case_mapping_data_fun_ast(DataName, MappingProperties)
@@ -679,13 +751,6 @@ special_casing_fun_ast(Name, IdxName, DataName) ->
        ]).
 
 
-numeric_funs_ast(Data, ExtraValues) ->
-    NumericProperties = ucd_properties:numeric(Data),
-    [numeric_index_fun_ast(NumericProperties)
-    ,numeric_data_fun_ast(NumericProperties)
-    ,numeric_fun_ast(ExtraValues)
-    ].
-
 numeric_index_fun_ast(NumericProperties) ->
     index_fun_ast(ucd_numeric_idx, compact(NumericProperties)).
 
@@ -709,13 +774,6 @@ numeric_fun_ast(ExtraValues) ->
        ]).
 
 
-decomposition_funs_ast(Data) ->
-    Data1 = ucd_properties:decomposition(Data),
-    [decomposition_index_fun_ast(Data1)
-    ,decomposition_data_fun_ast(Data1)
-    ,decomposition_fun_ast()].
-
-
 decomposition_index_fun_ast(Data) ->
     index_fun_ast(ucd_decomposition_idx, compact(Data)).
 
@@ -734,14 +792,6 @@ decomposition_fun_ast() ->
        ,"    Idx       -> ucd_decomposition_data(Idx)"
        ," end."
        ]).
-
-
-composition_funs_ast(Data) ->
-    Data1 = maps:from_list(ucd_properties:composition(Data)),
-    [?Q(["ucd_composition(CP1, CP2) ->"
-        ,"    maps:get({CP1, CP2}, _@Data1@, undefined)."
-        ])
-    ].
 
 
 nfd_quick_check_fun_ast(NormalizationProperties) ->
