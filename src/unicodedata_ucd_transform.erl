@@ -22,27 +22,27 @@ collect_ucd_funs_1(AST, UcdFuns) ->
         ?Q("ucd_is_category(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                      ucd_is_category,
-                                     fun ucd_properties:categories/0);
+                                     fun unicodedata_ucd:categories/0);
         ?Q("ucd_has_property(_@CP, _@V)") ->
             collect_ucd_property_fun(AST, CP, V, UcdFuns,
                                      ucd_has_property,
-                                     fun ucd_properties:prop_list_types/0);
+                                     fun unicodedata_ucd:prop_list_types/0);
         ?Q("ucd_grapheme_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_grapheme_break,
-                                    fun ucd_segmentation:grapheme_break_classes/0);
+                                    fun unicodedata_ucd:grapheme_break_classes/0);
         ?Q("ucd_word_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_word_break,
-                                    fun ucd_segmentation:word_break_classes/0);
+                                    fun unicodedata_ucd:word_break_classes/0);
         ?Q("ucd_sentence_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_sentence_break,
-                                    fun ucd_segmentation:sentence_break_classes/0);
+                                    fun unicodedata_ucd:sentence_break_classes/0);
         ?Q("ucd_line_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_line_break,
-                                    fun ucd_segmentation:line_break_classes/0);
+                                    fun unicodedata_ucd:line_break_classes/0);
         ?Q("ucd_special_casing(_@CP, lower)") ->
             collect_ucd_funs_replace({ucd_special_casing_lower, 1}, CP, UcdFuns);
         ?Q("ucd_special_casing(_@CP, title)") ->
@@ -176,7 +176,7 @@ forms({ucd_numeric, 1}, State0) ->
     {Data, State1} = numeric_data(State0),
     {[ numeric_index_fun_ast(Data)
      , numeric_data_fun_ast(Data)
-     , numeric_fun_ast(ucd_unihan:numeric_data())
+     , numeric_fun_ast()
      ], State1};
 
 forms({ucd_blocks, 0}, State0) ->
@@ -336,7 +336,7 @@ function_generated(Name, #{generated_functions := Funs}=State) ->
 
 
 ucd_data(#{data := undefined}=State) ->
-    Data = ucd_properties:unicode_data(),
+    Data = unicodedata_ucd:unicode_data(),
     {Data, State#{data := Data}};
 
 ucd_data(#{data := Data}=State) ->
@@ -345,7 +345,7 @@ ucd_data(#{data := Data}=State) ->
 
 codepoints_data(State) ->
     {Data, State1} = ucd_data(State),
-    {ucd_properties:codepoints(Data), State1}.
+    {unicodedata_ucd:codepoints(Data), State1}.
 
 
 common_properties_data(#{common_properties := undefined}=State0) ->
@@ -360,7 +360,7 @@ common_properties_data(#{common_properties := Properties}=State) ->
 
 ranges_data(#{ranges := undefined}=State0) ->
     {Data, State1} = ucd_data(State0),
-    Ranges = ucd_properties:ranges(Data),
+    Ranges = unicodedata_ucd:ranges(Data),
     {Ranges, State1#{ranges := Ranges}};
 
 ranges_data(#{ranges := Ranges}=State) ->
@@ -368,7 +368,7 @@ ranges_data(#{ranges := Ranges}=State) ->
 
 
 blocks_data(#{blocks := undefined}=State) ->
-    Blocks = ucd_names:blocks(),
+    Blocks = unicodedata_ucd:blocks(),
     {Blocks, State#{blocks := Blocks}};
 
 blocks_data(#{blocks := Blocks}=State) ->
@@ -376,7 +376,7 @@ blocks_data(#{blocks := Blocks}=State) ->
 
 
 prop_list_data(#{prop_list := undefined}=State) ->
-    PropList = ucd_properties:prop_list(),
+    PropList = unicodedata_ucd:prop_list(),
     {PropList, State#{prop_list := PropList}};
 
 prop_list_data(#{prop_list := PropList}=State) ->
@@ -384,7 +384,7 @@ prop_list_data(#{prop_list := PropList}=State) ->
 
 
 special_casing_data(#{special_casing := undefined}=State0) ->
-    Data = ucd_casing:special_casing(),
+    Data = unicodedata_ucd:special_casing(),
     {Data, State0#{special_casing := Data}};
 
 special_casing_data(#{special_casing := Data}=State) ->
@@ -392,7 +392,7 @@ special_casing_data(#{special_casing := Data}=State) ->
 
 
 normalization_properties(#{normalization_properties := undefined}=State0) ->
-    Data = ucd_normalization:normalization_properties(),
+    Data = unicodedata_ucd:derived_normalization_props(),
     {Data, State0#{normalization_properties := Data}};
 
 normalization_properties(#{normalization_properties := Data}=State) ->
@@ -437,7 +437,7 @@ decomposition_data(State0) ->
 composition_data(State0) ->
     {Data, State1} = ucd_data(State0),
     NonStarters = lists:foldl(fun composition_non_starter/2, sets:new(), Data),
-    Exclusions = sets:from_list(ucd_normalization:composition_exclusions()),
+    Exclusions = sets:from_list(unicodedata_ucd:composition_exclusions()),
     {lists:foldr(fun (CP, Acc) ->
                       composition_data(CP, NonStarters, Exclusions, Acc)
                  end, #{}, Data)
@@ -572,8 +572,8 @@ common_properties_index_fun_ast(CommonProperties) ->
 
 
 category_data_fun_ast(CommonProperties) ->
-    Categories = ucd_properties:categories(),
-    Names = [ucd_properties:category_name(C) || C <- Categories],
+    Categories = unicodedata_ucd:categories(),
+    Names = [unicodedata_ucd:category_name(C) || C <- Categories],
     DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
     Data = [element(3,V) || V <- CommonProperties],
     Bits = encode_to_bits(Categories, Data),
@@ -581,9 +581,9 @@ category_data_fun_ast(CommonProperties) ->
 
 
 category_range_data_fun_ast(Ranges) ->
-    RangeValues = [{F,T,ucd_properties:category_name(C)}
+    RangeValues = [{F,T,unicodedata_ucd:category_name(C)}
                    || {{F,T}, _,C,_,_,_,_,_,_,_,_} <- Ranges],
-    Default = ucd_properties:category_name('Cn'),
+    Default = unicodedata_ucd:category_name('Cn'),
     range_fun_ast(ucd_category_range_data, RangeValues, ?Q("_@Default@")).
 
 
@@ -626,8 +626,8 @@ combining_class_fun_ast() ->
 
 
 bidi_class_data_fun_ast(CommonProperties) ->
-    Classes = ucd_properties:bidi_classes(),
-    Names = [ucd_properties:bidi_class_name(C) || C <- Classes],
+    Classes = unicodedata_ucd:bidi_classes(),
+    Names = [unicodedata_ucd:bidi_class_name(C) || C <- Classes],
     DecodeASTFun = fun (V) -> decode_value_case_ast(V, Names) end,
     Data = [element(5,V) || V <- CommonProperties],
     Bits = encode_to_bits(Classes, Data),
@@ -635,15 +635,15 @@ bidi_class_data_fun_ast(CommonProperties) ->
 
 
 bidi_class_range_data_fun_ast(Ranges) ->
-    RangeValues = [{F,T,ucd_properties:bidi_class_name(C)}
+    RangeValues = [{F,T,unicodedata_ucd:bidi_class_name(C)}
                    || {{F,T}, _,_,_,C,_,_,_,_,_,_} <- Ranges],
     range_fun_ast(ucd_bidi_class_range_data, RangeValues).
 
 
 bidi_class_fun_ast() ->
-    RangeValues = [{F,T,ucd_properties:bidi_class_name(C)}
-                   || {F,T,C} <- ucd_properties:bidi_class_defaults()],
-    Default = ucd_properties:bidi_class_name('L'),
+    RangeValues = [{F,T,unicodedata_ucd:bidi_class_name(C)}
+                   || {F,T,C} <- unicodedata_ucd:bidi_class_defaults()],
+    Default = unicodedata_ucd:bidi_class_name('L'),
     DefaultAST = range_fun_ast_1(split(RangeValues), ?Q("_@Default@")),
     ?Q(["ucd_bidi_class(CP) ->"
        ,"  case ucd_properties_idx(CP) of"
@@ -725,7 +725,7 @@ special_casing_funs_ast(Data, upper) ->
                              ,ucd_special_casing_upper_data).
 
 special_casing_funs_ast_1(Data, Name, IdxName, DataName) ->
-    Data1 = ucd:sort_by_codepoints(Data),
+    Data1 = unicodedata_ucd:sort_by_codepoints(Data),
     [special_casing_index_fun_ast(IdxName, Data1)
     ,special_casing_data_fun_ast(DataName, Data1)
     ,special_casing_fun_ast(Name, IdxName, DataName)].
@@ -762,8 +762,10 @@ numeric_data_fun_ast(NumericProperties) ->
         "    element(Index + 1, _@Data@)."
        ]).
 
-numeric_fun_ast(ExtraValues) ->
-    DefaultAST = binary_search_ast(ExtraValues, ?Q("undefined")),
+numeric_fun_ast() ->
+    ExtraValues = unicodedata_ucd:unihan_numeric_values(),
+    SortedValues = unicodedata_ucd:sort_by_codepoints(ExtraValues),
+    DefaultAST = binary_search_ast(SortedValues, ?Q("undefined")),
     ?Q(["ucd_numeric(CP) ->"
        ," case ucd_numeric_idx(CP) of"
        ,"    undefined ->"
@@ -795,22 +797,30 @@ decomposition_fun_ast() ->
 
 
 nfd_quick_check_fun_ast(NormalizationProperties) ->
-    Data = ucd_normalization:nfd_quick_check_no(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfd_quick_check, [{V,no} || V <- Data]).
+    Data = [{V,no} || {V, nfd_quick_check_no} <- NormalizationProperties],
+    normalization_quickcheck_fun_ast(ucd_nfd_quick_check, Data).
 
 
 nfc_quick_check_fun_ast(NormalizationProperties) ->
-    Data = ucd_normalization:nfc_quick_check(NormalizationProperties),
+    Vs = lists:filtermap(fun ({V, nfc_quick_check_no})    -> {true, {V,no}};
+                             ({V, nfc_quick_check_maybe}) -> {true, {V,maybe}};
+                             (_)                          -> false
+                         end, NormalizationProperties),
+    Data = unicodedata_ucd:sort_by_codepoints(Vs),
     normalization_quickcheck_fun_ast(ucd_nfc_quick_check, Data).
 
 
 nfkd_quick_check_fun_ast(NormalizationProperties) ->
-    Data = ucd_normalization:nfkd_quick_check_no(NormalizationProperties),
-    normalization_quickcheck_fun_ast(ucd_nfkd_quick_check, [{V,no} || V <- Data]).
+    Data = [{V, no} || {V, nfkd_quick_check_no} <- NormalizationProperties],
+    normalization_quickcheck_fun_ast(ucd_nfkd_quick_check, Data).
 
 
 nfkc_quick_check_fun_ast(NormalizationProperties) ->
-    Data = ucd_normalization:nfkc_quick_check(NormalizationProperties),
+    Vs = lists:filtermap(fun ({V, nfkc_quick_check_no})    -> {true,{V,no}};
+                             ({V, nfkc_quick_check_maybe}) -> {true,{V,maybe}};
+                             (_)                           -> false
+                         end, NormalizationProperties),
+    Data = unicodedata_ucd:sort_by_codepoints(Vs),
     normalization_quickcheck_fun_ast(ucd_nfkc_quick_check, Data).
 
 
@@ -823,11 +833,11 @@ normalization_quickcheck_fun_ast(Name, Data) ->
 
 
 hangul_syllable_type_fun_ast() ->
-    Data = ucd:sort_by_codepoints(ucd_hangul:syllable_type()),
+    Data = unicodedata_ucd:hangul_syllable_type(),
     Rs = [case V of
               {{F,T},S} -> {F,T,S};
               {Cp, S}   -> {Cp, Cp, S}
-          end || V <- Data],
+          end || V <- unicodedata_ucd:sort_by_codepoints(Data)],
     range_fun_ast(ucd_hangul_syllable_type, Rs, ?Q("not_applicable")).
 
 
@@ -842,27 +852,27 @@ codepoint_range_fun_ast(Ranges) ->
 
 codepoint_range_value(Range) ->
     {From, To} = element(1, Range),
-    Name = ucd_properties:range_name(element(2, Range)),
+    Name = unicodedata_ucd:range_name(element(2, Range)),
     {From, To, Name}.
 
 
 grapheme_break_fun_ast() ->
-    Data = ucd_segmentation:grapheme_breaks(),
+    Data = unicodedata_ucd:grapheme_break_property(),
     segmentation_fun_ast(ucd_grapheme_break, Data, other).
 
 
 word_break_fun_ast() ->
-    Data = ucd_segmentation:word_breaks(),
+    Data = unicodedata_ucd:word_break_property(),
     segmentation_fun_ast(ucd_word_break, Data, other).
 
 
 sentence_break_fun_ast() ->
-    Data = ucd_segmentation:sentence_breaks(),
+    Data = unicodedata_ucd:sentence_break_property(),
     segmentation_fun_ast(ucd_sentence_break, Data, other).
 
 
 line_break_fun_ast() ->
-    Data = ucd_segmentation:line_breaks(),
+    Data = unicodedata_ucd:line_break(),
     segmentation_fun_ast(ucd_line_break, Data, xx).
 
 
@@ -870,33 +880,34 @@ segmentation_fun_ast(Name, Data, Default) ->
     RangeValues = [case V of
                        {{F,T},R} -> {F,T,R};
                        {Cp, R}   -> {Cp, Cp, R}
-                   end || V <- Data],
+                   end || V <- unicodedata_ucd:sort_by_codepoints(Data)],
     range_fun_ast(Name, RangeValues, ?Q("_@Default@")).
 
 
 grapheme_break_classes_fun_ast(Name, Classes) ->
-    Data = ucd_segmentation:grapheme_breaks(),
+    Data = unicodedata_ucd:grapheme_break_property(),
     segmentation_classes_fun_ast(Name, Data, Classes).
 
 
 word_break_classes_fun_ast(Name, Classes) ->
-    Data = ucd_segmentation:word_breaks(),
+    Data = unicodedata_ucd:word_break_property(),
     segmentation_classes_fun_ast(Name, Data, Classes).
 
 
 sentence_break_classes_fun_ast(Name, Classes) ->
-    Data = ucd_segmentation:sentence_breaks(),
+    Data = unicodedata_ucd:sentence_break_property(),
     segmentation_classes_fun_ast(Name, Data, Classes).
 
 
 line_break_classes_fun_ast(Name, Classes) ->
-    Data = ucd_segmentation:line_breaks(),
+    Data = unicodedata_ucd:line_break(),
     segmentation_classes_fun_ast(Name, Data, Classes).
 
 
 segmentation_classes_fun_ast(Name, Data, Classes) ->
-    Data1 = [V || {V, Class} <- Data, lists:member(Class, Classes)],
-    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data1)],
+    Data1 = unicodedata_ucd:sort_by_codepoints(Data),
+    Data2 = [V || {V, Class} <- Data1, lists:member(Class, Classes)],
+    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data2)],
     range_fun_ast(Name, Ranges, ?Q("false")).
 
 

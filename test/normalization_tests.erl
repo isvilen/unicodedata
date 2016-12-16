@@ -145,11 +145,11 @@ foreach_test_data(Fun) ->
                          Fields = binary:split(Line, <<";">>, [global]),
                          [Src, NFC, NFD, NFKC, NFKD | _] = Fields,
                          Fun(LineNo
-                            ,ucd:codepoints(Src)
-                            ,ucd:codepoints(NFC)
-                            ,ucd:codepoints(NFD)
-                            ,ucd:codepoints(NFKC)
-                            ,ucd:codepoints(NFKD))
+                            ,unicodedata_ucd:parse_codepoints(Src)
+                            ,unicodedata_ucd:parse_codepoints(NFC)
+                            ,unicodedata_ucd:parse_codepoints(NFD)
+                            ,unicodedata_ucd:parse_codepoints(NFKC)
+                            ,unicodedata_ucd:parse_codepoints(NFKD))
                  end).
 
 

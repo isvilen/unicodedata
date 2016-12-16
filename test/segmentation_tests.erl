@@ -77,11 +77,5 @@ fields(Line) ->
     [field(F) || F <- re:split(Line, "\\s+"), F /= <<>>, F /= <<"×"/utf8>>].
 
 
-field(<<"÷"/utf8>>) ->
-    break;
-
-field(Bin) ->
-    case io_lib:fread("~16u", binary_to_list(Bin)) of
-        {ok,[V],[]} -> V;
-        _           -> error({invalid_codepoint, Bin})
-    end.
+field(<<"÷"/utf8>>) -> break;
+field(Bin)          -> unicodedata_ucd:parse_codepoint(Bin).
