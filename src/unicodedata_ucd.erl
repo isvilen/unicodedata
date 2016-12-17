@@ -591,7 +591,7 @@ block_data([CpOrRange, Name]) ->
 
 
 name_aliases([Cp,Name,Type]) ->
-    {parse_codepoint(Cp), name_alias_type(Type), Name}.
+    {parse_codepoint(Cp), Name, name_alias_type(Type)}.
 
 name_alias_type(<<"correction">>)   -> correction;
 name_alias_type(<<"control">>)      -> control;
@@ -988,6 +988,25 @@ line_break_class(<<"XX ",_/binary>>) -> xx.
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+unicode_data_test_() -> {setup, fun () -> unicode_data() end, {with, [
+  fun (Data) -> ?assertEqual(30578, length(Data)) end
+ ,fun (Data) -> ?assertEqual(30564, length(codepoints(Data))) end
+ ,fun (Data) -> ?assertEqual(14,    length(ranges(Data))) end
+ ,fun (Data) ->
+      CPs = [ element(1,D) || D <- Data
+            , element(3,D) /= 'Co'
+            , element(3,D) /= 'Cs'
+            , element(3,D) /= 'Cc'
+            ],
+      ?assertEqual(128172, count(CPs))
+  end
+]}}.
+
+prop_list_test_() -> {setup, fun () -> prop_list() end, {with, [
+  fun (Data) -> ?assertEqual(25, count([C || {C, white_space} <- Data])) end
+ ,fun (Data) -> ?assertEqual(30, count([C || {C, quotation_mark} <- Data])) end
+]}}.
+
 sort_by_codepoints_test_() -> [
   ?_assertEqual([{0, a}
                 ,{1, b}
@@ -1002,5 +1021,12 @@ sort_by_codepoints_test_() -> [
                                    ,{0, a}
                                    ,{2, c}]))
 ].
+
+
+count(Cs) -> lists:sum(lists:map(fun count_1/1, Cs)).
+
+count_1({C1,C2}) -> C2 - C1 + 1;
+count_1(_)       -> 1.
+
 
 -endif.
