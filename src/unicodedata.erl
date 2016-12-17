@@ -13,9 +13,6 @@
         , is_reserved/1
         , numeric/1
         , numeric_value/2
-        , blocks/0
-        , block/1
-        , codepoint_block/1
         , to_uppercase/1
         , to_lowercase/1
         , east_asian_width/1
@@ -191,35 +188,6 @@ numeric_value(CP, Default) ->
     end.
 
 
--spec blocks() -> [{binary(), {char(), char()}}].
-blocks() -> ucd_blocks().
-
-
--spec block(Name) -> {char(), char()} | no_block
-      when Name :: binary() | string().
-block(Name) when is_binary(Name) ->
-    case lists:keyfind(Name, 1, blocks()) of
-        {_, Range} -> Range;
-        false      -> block(binary_to_list(Name))
-    end;
-
-block(Name) ->
-    block(normalize_block_name(Name), blocks()).
-
-block(_, []) ->
-    no_block;
-
-block(Name, [{Block, Range} | Blocks]) ->
-    case normalize_block_name(binary_to_list(Block)) of
-        Name -> Range;
-        _    -> block(Name, Blocks)
-    end.
-
-
--spec codepoint_block(char()) -> binary() | no_block.
-codepoint_block(CP) -> ucd_block(CP).
-
-
 -spec to_uppercase(string()) -> string().
 to_uppercase(String) ->
     unicodedata_case:to_uppercase(String).
@@ -233,10 +201,6 @@ to_lowercase(String) ->
 -spec east_asian_width(char()) -> east_asian_width().
 east_asian_width(CP) ->
     ucd_east_asian_width(CP).
-
-
-normalize_block_name(Name) ->
-    string:to_lower([C || C <- Name, C /= $\s, C /= $-, C /= $_]).
 
 
 -ifdef(TEST).
@@ -365,30 +329,6 @@ numeric_test_() -> [
    ,?_assertEqual(0,   numeric_value(16#2070, -1))
 
    ,?_assertEqual(1000000000000,     numeric_value(16#5146, 0))
-].
-
-blocks_test_() -> [
-    ?_assertMatch([{<<"Basic Latin">>, {0,127}} | _], blocks())
-   ,?_assertEqual({0,127}, block(<<"Basic Latin">>))
-   ,?_assertEqual({16#100, 16#017F}, block("latin extended a"))
-   ,?_assertEqual(no_block, block(<<"">>))
-].
-
-codepoint_block_test_() -> [
-    ?_assertEqual(<<"Basic Latin">>,        codepoint_block(7))
-   ,?_assertEqual(<<"Cyrillic">>,           codepoint_block(1029))
-   ,?_assertEqual(<<"Letterlike Symbols">>, codepoint_block(8472))
-   ,?_assertEqual(<<"Yi Syllables">>,       codepoint_block(41287))
-   ,?_assertEqual(<<"Hangul Syllables">>,   codepoint_block(44032))
-   ,?_assertEqual(<<"Variation Selectors">>,codepoint_block(65024))
-   ,?_assertEqual(<<"Multani">>,            codepoint_block(70277))
-   ,?_assertEqual(<<"CJK Unified Ideographs Extension B">>
-                 ,codepoint_block(131072))
-
-   ,?_assertEqual(<<"Low Surrogates">>,   codepoint_block(16#dc00))
-   ,?_assertEqual(<<"Private Use Area">>, codepoint_block(16#e000))
-
-   ,?_assertEqual(no_block, codepoint_block(16#E00FF))
 ].
 
 east_asian_width_test_() -> [

@@ -27,6 +27,11 @@ collect_ucd_funs_1(AST, UcdFuns) ->
             collect_ucd_property_fun(AST, CP, V, UcdFuns,
                                      ucd_has_property,
                                      fun unicodedata_ucd:prop_list_types/0);
+        ?Q("ucd_name_aliases(_@CP, _@V)") ->
+            collect_ucd_property_fun(AST, CP, V, UcdFuns,
+                                     ucd_name_aliases,
+                                     fun unicodedata_ucd:name_aliases_types/0);
+
         ?Q("ucd_grapheme_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_grapheme_break,
@@ -130,6 +135,7 @@ forms(Funs) ->
              , prop_list => undefined
              , special_casing => undefined
              , normalization_properties => undefined
+             , name_aliases => undefined
              , generated_functions => sets:new()
              },
     {Forms, _} = lists:mapfoldl(fun forms/2, State, Funs),
@@ -245,6 +251,11 @@ forms({ucd_has_property, Property}, State) ->
     Name = ucd_fun_name(ucd_has_property, [Property]),
     has_property_forms(Name, Property, State);
 
+forms({ucd_name_aliases, Type}, State0) ->
+    Name = ucd_fun_name(ucd_name_aliases, [Type]),
+    {Data, State1} = name_aliases_data(State0),
+    {[name_aliases_fun_ast(Name, Type, Data)], State1};
+
 forms({ucd_lowercase_mapping, 1}, State0) ->
     {Data, State1} = lowercase_mapping_data(State0),
     {case_mapping_funs_ast(Data
@@ -303,6 +314,10 @@ forms({ucd_east_asian_width, 1}, State) ->
      , east_asian_width_defaults_fun_ast()
      , east_asian_width_fun_ast()
      ], State};
+
+forms({ucd_codepoint_name, 1}, State0) ->
+    {Data, State1} = codepoints_data(State0),
+    {codepoint_name_funs_ast(Data), State1};
 
 forms(_, State) ->
     {[], State}.
@@ -413,6 +428,14 @@ numeric_data(State0) ->
     Result = [{Id, Numeric} || {Id,_,_,_,_,_,Numeric,_,_,_,_} <- Data
                              , Numeric /= undefined],
     {Result, State1}.
+
+
+name_aliases_data(#{name_aliases := undefined}=State0) ->
+    Data = unicodedata_ucd:name_aliases(),
+    {Data, State0#{name_aliases := Data}};
+
+name_aliases_data(#{name_aliases := Data}=State) ->
+    {Data, State}.
 
 
 uppercase_mapping_data(State0) ->
@@ -931,6 +954,33 @@ segmentation_classes_fun_ast(Name, Data, Classes) ->
     Data2 = [V || {V, Class} <- Data1, lists:member(Class, Classes)],
     Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data2)],
     range_fun_ast(Name, Ranges, ?Q("false")).
+
+
+name_aliases_fun_ast(Name, Type, Data) ->
+    Data1 = lists:foldl(
+              fun ({C, N, T}, Acc) when T == Type ->
+                      maps:update_with(C, fun (V) -> V ++ [N] end, [N], Acc);
+                  (_, Acc) ->
+                      Acc
+              end, #{}, Data),
+    ?Q(["'@Name@'(CP) ->"
+       ,"    maps:get(CP, _@Data1@, [])."
+       ]).
+
+
+codepoint_name_funs_ast(Data) ->
+    Cases = lists:filtermap(fun codepoint_name_case_ast/1, Data),
+    Cases1 = Cases ++ [?Q("_ -> undefined")],
+    [?Q(["ucd_codepoint_name(CP) ->"
+        ,"  case CP of"
+        ,"   _ -> _@_@Cases1"
+        ,"  end."
+        ])].
+
+codepoint_name_case_ast({CP,<<C,_/binary>>=N,_,_,_,_,_,_,_,_,_}) when C /= $< ->
+    {true, ?Q("_@CP@ -> _@N@")};
+codepoint_name_case_ast(_) ->
+    false.
 
 
 decode_value_case_ast(ValueAST, Values) ->
