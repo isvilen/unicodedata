@@ -31,7 +31,10 @@ collect_ucd_funs_1(AST, UcdFuns) ->
             collect_ucd_property_fun(AST, CP, V, UcdFuns,
                                      ucd_name_aliases,
                                      fun unicodedata_ucd:name_aliases_types/0);
-
+        ?Q("ucd_name_alias_lookup(_@Name, _@V)") ->
+            collect_ucd_category_fun(AST, Name, V, UcdFuns,
+                                     ucd_name_alias_lookup,
+                                     fun unicodedata_ucd:name_aliases_types/0);
         ?Q("ucd_grapheme_break(_@CP, _@V)") ->
             collect_ucd_category_fun(AST, CP, V, UcdFuns,
                                     ucd_grapheme_break,
@@ -319,18 +322,61 @@ forms({ucd_codepoint_name, 1}, State0) ->
     {Data, State1} = codepoints_data(State0),
     {codepoint_name_funs_ast(Data), State1};
 
+forms({ucd_codepoint_name_lookup, 1}, State0) ->
+    {CPs, State1} = codepoints_data(State0),
+    Data = name_lookup_codepoint_names(CPs),
+    {Forms, State2} = name_lookup_funs_ast(ucd_codepoint_name_lookup, Data, State1),
+    ensure_name_lookup_helper_funs(Forms, State2);
+
+forms({ucd_name_alias_lookup, Types}, State0) ->
+    Name = ucd_fun_name(ucd_name_alias_lookup, Types),
+    {Data, State1} = name_aliases_data(State0),
+    Data1 = name_lookup_alias_names(Data, Types),
+    {Forms, State2} = name_lookup_funs_ast(Name, Data1, State1),
+    ensure_name_lookup_helper_funs(Forms, State2);
+
+forms({ucd_normalize_name, 1}, State) ->
+    ensure_normalize_name_fun([], State);
+
 forms(_, State) ->
     {[], State}.
 
 
 ensure_common_properties_index(Forms, State0) ->
     {Properties, State1} = common_properties_data(State0),
-    case is_function_generated(ucd_properties_idx, State1) of
+    ensure_fun(ucd_properties_idx
+              , fun () -> [common_properties_index_fun_ast(Properties)] end
+              , Forms, State1).
+
+
+ensure_name_lookup_helper_funs(Forms, State0) ->
+    {Forms1, State1} = ensure_normalize_name_fun(Forms, State0),
+    ensure_name_lookup_search_fun(Forms1, State1).
+
+
+ensure_normalize_name_fun(Forms, State) ->
+    ensure_fun(ucd_normalize_name, fun normalize_name_funs_ast/0, Forms, State).
+
+
+ensure_name_lookup_search_fun(Forms, State) ->
+    ensure_fun(ucd_name_lookup, fun () -> [name_lookup_search_fun()] end
+              ,Forms, State).
+
+
+ensure_name_lookup_collision_fun_ast(Forms, State) ->
+    ensure_fun(ucd_name_lookup_collision
+              , fun () -> [name_lookup_collision_fun_ast()] end
+              , Forms, State).
+
+
+ensure_fun(Name, FormsFun, Forms0, #{generated_functions := Funs}=State0) ->
+    case sets:is_element(Name, Funs) of
         true  ->
-            {Forms, State1};
+            {Forms0, State0};
         false ->
-            IdxFun = common_properties_index_fun_ast(Properties),
-            {[IdxFun | Forms], function_generated(ucd_properties_idx, State1)}
+            Forms1 = FormsFun() ++  Forms0,
+            State1 = State0#{generated_functions := sets:add_element(Name, Funs)},
+            {Forms1, State1}
     end.
 
 
@@ -349,14 +395,6 @@ has_property_forms(Name, Property, State0) ->
     {Data, State1} = prop_list_data(State0),
     Forms = [has_property_fun_ast(Name, Data, Property)],
     {Forms, State1}.
-
-
-is_function_generated(Name, #{generated_functions := Funs}) ->
-    sets:is_element(Name, Funs).
-
-
-function_generated(Name, #{generated_functions := Funs}=State) ->
-    State#{generated_functions := sets:add_element(Name, Funs)}.
 
 
 ucd_data(#{data := undefined}=State) ->
@@ -983,6 +1021,120 @@ codepoint_name_case_ast(_) ->
     false.
 
 
+normalize_name_funs_ast() ->
+    [?Q(["ucd_normalize_name(Name) ->"
+        ,"    N1 = string:to_lower(binary_to_list(Name)),"
+        ,"    N2 = string:tokens(N1, \" \"),"
+        ,"    N3 = [ucd_normalize_name_1(N) || N <- N2],"
+        ,"    iolist_to_binary(N3)."])
+    ,?Q(["ucd_normalize_name_1(\"o-e\")   -> \"o-e\";"
+        ,"ucd_normalize_name_1(\"g-o-e\") -> \"go-e\";"
+        ,"ucd_normalize_name_1([A,$-,B | Rest]) when A >= $a, A =< $z,"
+        ,"                                           B >= $a, B =< $z ->"
+        ,"    [A | ucd_normalize_name_1([B|Rest])];"
+        ,"ucd_normalize_name_1([H|T]) -> [H | ucd_normalize_name_1(T)];"
+        ,"ucd_normalize_name_1([])    -> []."])
+    ].
+
+normalize_codepoint_name(Name) ->
+    N1 = string:to_lower(binary_to_list(Name)),
+    N2 = string:tokens(N1, " "),
+    N3 = [normalize_name_1(N) || N <- N2],
+    iolist_to_binary(N3).
+
+% special case for U+1180 HANGUL JUNGSEONG O-E
+normalize_name_1("o-e")   -> "o-e";
+normalize_name_1("g-o-e") -> "go-e";
+normalize_name_1([A,$-,B | Rest]) when A >= $a, A =< $z,
+                                       B >= $a, B =< $z ->
+    [A | normalize_name_1([B|Rest])];
+normalize_name_1([H|T]) -> [H | normalize_name_1(T)];
+normalize_name_1([])    -> [].
+
+
+name_lookup_funs_ast(Name, Data, State) ->
+    case name_lookup_data(Data) of
+        {HashToCP, []} ->
+            {[ name_lookup_fun_ast(Name, HashToCP) ], State};
+        {HashToCP, Collisions} ->
+            Forms = [ name_lookup_fun_ast(Name, HashToCP, Collisions) ],
+            ensure_name_lookup_collision_fun_ast(Forms, State)
+    end.
+
+name_lookup_fun_ast(Name, HashToCP) ->
+    {Data, Len} = name_lookup_hash_data(HashToCP),
+    ?Q(["'@Name@'(Name) ->"
+       ," Data = _@Data@,"
+       ," Hash = erlang:phash2(ucd_normalize_name(Name)),"
+       ," ucd_name_lookup(Hash, 0, _@Len@, Data)."
+       ]).
+
+name_lookup_fun_ast(Name, HashToCP, Collisions) ->
+    {Data, Len} = name_lookup_hash_data(HashToCP),
+    Cases = [?Q("_@H@ -> ucd_name_lookup_collision(N1,_@Cs@)") || {H,Cs} <- Collisions],
+    Cases1 = Cases ++ [?Q("V -> ucd_name_lookup(V, 0, _@Len@, Data)")],
+    ?Q(["'@Name@'(Name) ->"
+       ," Data = _@Data@,"
+       ," N1 = ucd_normalize_name(Name),"
+       ," case erlang:phash2(N1) of"
+       ,"   _ -> _@_@Cases1"
+       ," end."
+       ]).
+
+name_lookup_collision_fun_ast() ->
+    ?Q(["ucd_name_lookup_collision(_,[]) -> undefined;"
+       ,"ucd_name_lookup_collision(N,[{CP, N} | _]) -> CP;"
+       ,"ucd_name_lookup_collision(N,[_ | Cs])      -> ucd_name_lookup_collision(N,Cs)."
+       ]).
+
+name_lookup_search_fun() ->
+    ?Q(["ucd_name_lookup(_, From, To, _) when From >= To -> undefined;"
+       ,"ucd_name_lookup(Hash, From, To, Data) ->"
+       ,"  Pos = From + (To - From) div 2,"
+       ,"  case binary:part(Data, Pos*6, 6) of"
+       ,"    <<Hash:27,CP:21>>           -> CP;"
+       ,"    <<H:27,_:21>> when H > Hash -> ucd_name_lookup(Hash, From, Pos, Data);"
+       ,"    _                           -> ucd_name_lookup(Hash, Pos+1, To, Data)"
+       ,"  end."]).
+
+
+name_lookup_codepoint_names(CPs) ->
+    [{element(2,V), element(1,V)} || V <- CPs, binary:at(element(2,V),0) /= $<].
+
+
+name_lookup_alias_names(Aliases, Types) ->
+    [{Name, CP} || {CP, Name, Type} <- Aliases, lists:member(Type, Types)].
+
+
+name_lookup_data(Data) ->
+    ValuesMap = name_lookup_fold_data(Data, #{}),
+    {HashToCP, Collisions} =
+        maps:fold(fun (K, {CP, _}, {Acc1, Acc2}) ->
+                          {[{K,CP} | Acc1], Acc2};
+                      (K, Vs, {Acc1, Acc2}) ->
+                          {Acc1, [{K,Vs} | Acc2]}
+                  end, {[], []}, ValuesMap),
+    {lists:keysort(1, HashToCP), Collisions}.
+
+
+name_lookup_fold_data(Data, Acc) ->
+    lists:foldl(fun ({Name, CP}, Acc0) ->
+                        N = normalize_codepoint_name(Name),
+                        V = {CP, N},
+                        Hash = erlang:phash2(N),
+                        case maps:get(Hash, Acc0, undefined) of
+                            undefined -> Acc0#{Hash => V};
+                            Vs when is_list(Vs)-> Acc0#{Hash => [V | Vs]};
+                            V1 -> Acc0#{Hash => [V,V1]}
+                        end
+                end, Acc, Data).
+
+
+
+name_lookup_hash_data(HashToCP) ->
+    {<< <<H:27,V:21>> || {H,V} <- HashToCP >>, length(HashToCP)}.
+
+
 decode_value_case_ast(ValueAST, Values) ->
     Cases = [?Q("_@V@ -> _@R@") || {R,V} <- enum_values(Values)],
     ?Q(["case _@ValueAST of"
@@ -1226,6 +1378,25 @@ binary_search_ast_test_() ->
     ,?_assertEqual(c, ucd_binary_search:f1(15))
     ,?_assertEqual(default, ucd_binary_search:f1(5))
     ,?_assertEqual(default, ucd_binary_search:f1(25))
+  ]}.
+
+normalize_name_test_() ->
+  Funs = normalize_name_funs_ast(),
+  {setup, fun() -> test_mod(ucd_normalize_name, Funs) end, fun code:purge/1, [
+     ?_assertEqual(<<"abcd">>,
+                   ucd_normalize_name:ucd_normalize_name(<<"Ab  cD">>))
+
+    ,?_assertEqual(<<"tibetanmarktsa-phru">>,
+                   ucd_normalize_name:ucd_normalize_name(<<"TIBETAN MARK TSA -PHRU">>))
+
+    ,?_assertEqual(ucd_normalize_name:ucd_normalize_name(<<"zero-width space">>),
+                   ucd_normalize_name:ucd_normalize_name(<<"ZERO WIDTH SPACE">>))
+
+    ,?_assertEqual(ucd_normalize_name:ucd_normalize_name(<<"ZERO WIDTH SPACE">>),
+                   ucd_normalize_name:ucd_normalize_name(<<"zerowidthspace">>))
+
+    ,?_assertNotEqual(ucd_normalize_name:ucd_normalize_name(<<"character -a">>),
+                      ucd_normalize_name:ucd_normalize_name(<<"character a">>))
   ]}.
 
 

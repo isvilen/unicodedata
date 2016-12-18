@@ -5,6 +5,7 @@
         , codepoint_block/1
         , codepoint_name/1
         , codepoint_display_name/1
+        , codepoint_lookup/1
         ]).
 
 -spec blocks() -> [{binary(), {char(), char()}}].
@@ -14,19 +15,20 @@ blocks() -> ucd_blocks().
 -spec block(Name) -> {char(), char()} | no_block
       when Name :: binary() | string().
 block(Name) when is_binary(Name) ->
-    case lists:keyfind(Name, 1, blocks()) of
+    Blocks = ucd_blocks(),
+    case lists:keyfind(Name, 1, Blocks) of
         {_, Range} -> Range;
-        false      -> block(binary_to_list(Name))
+        false      -> block(ucd_normalize_name(Name), Blocks)
     end;
 
 block(Name) ->
-    block(normalize_block_name(Name), blocks()).
+    block(list_to_binary(Name)).
 
 block(_, []) ->
     no_block;
 
 block(Name, [{Block, Range} | Blocks]) ->
-    case normalize_block_name(binary_to_list(Block)) of
+    case ucd_normalize_name(Block) of
         Name -> Range;
         _    -> block(Name, Blocks)
     end.
@@ -64,6 +66,30 @@ codepoint_display_name(CP) ->
             end;
         [Name] ->
             Name
+    end.
+
+
+-spec codepoint_lookup(binary()) -> char() | not_found.
+codepoint_lookup(Name) ->
+    case ucd_codepoint_name_lookup(Name) of
+        undefined ->
+            case ucd_name_alias_lookup(Name, [correction, abbreviation]) of
+                undefined ->
+                    Tokens = lookup_name_tokens(Name),
+                    case range_name_lookup(Tokens) of
+                        undefined ->
+                            case control_name_lookup(Tokens) of
+                                undefined -> not_found;
+                                CP        -> CP
+                            end;
+                        CP ->
+                            CP
+                    end;
+                CP ->
+                    CP
+            end;
+        CP ->
+            CP
     end.
 
 
@@ -109,6 +135,7 @@ tangut_ideograph_name(CP) ->
 
 
 -define(HANGUL_SYLLABLE_BASE,16#ac00).
+-define(HANGUL_SYLLABLES_L,19).
 -define(HANGUL_SYLLABLES_V,21).
 -define(HANGUL_SYLLABLES_T,28).
 -define(HANGUL_SYLLABLES_N,(?HANGUL_SYLLABLES_V * ?HANGUL_SYLLABLES_T)).
@@ -216,8 +243,107 @@ reserved_name(CP) ->
     codepoint_make_display_name(<<"reserved-">>, CP).
 
 
-normalize_block_name(Name) ->
-    string:to_lower([C || C <- Name, C /= $\s, C /= $-, C /= $_]).
+lookup_name_tokens(Name) ->
+    Name1 = string:to_lower(binary_to_list(Name)),
+    string:tokens(Name1, [$\s,$-]).
+
+
+range_name_lookup(["cjk", "unified", "ideograph", ID]) ->
+    case bin_to_hex(ID) of
+        undefined ->
+            not_found;
+        CP ->
+            case ucd_codepoint_range(CP) of
+                {cjk_ideograph, _} -> CP;
+                cjk_ideograph      -> CP;
+                _                  -> not_found
+            end
+    end;
+
+range_name_lookup(["tangut", "ideograph", ID]) ->
+    case bin_to_hex(ID) of
+        undefined ->
+            not_found;
+        CP ->
+            case ucd_codepoint_range(CP) of
+                tangut_ideograph   -> CP;
+                _                  -> not_found
+            end
+    end;
+
+
+range_name_lookup(["hangul", "syllable" | Rest]) ->
+    lookup_hangul_syllable(Rest);
+
+range_name_lookup(_) ->
+    undefined.
+
+
+lookup_hangul_syllable(Tokens) ->
+    SYL = iolist_to_binary([string:to_upper(V) || V <- Tokens]),
+    case lookup_hangul_syllable_L(SYL) of
+        {L, SYL1} ->
+            case lookup_hangul_syllable_V(SYL1) of
+                {V, SYL2} ->
+                    case lookup_hangul_syllable_T(SYL2) of
+                        {T, <<>>} ->
+                            ?HANGUL_SYLLABLE_BASE
+                            + (L * ?HANGUL_SYLLABLES_V + V) * ?HANGUL_SYLLABLES_T
+                            + T;
+                        _ ->
+                            not_found
+                    end;
+                _ ->
+                    not_found
+            end;
+        _ ->
+            not_found
+    end.
+
+
+lookup_hangul_syllable_L(SYL) ->
+    lookup_hangul_syllable(SYL, fun hangul_syllable_L/1, ?HANGUL_SYLLABLES_L).
+
+lookup_hangul_syllable_V(SYL) ->
+    lookup_hangul_syllable(SYL, fun hangul_syllable_V/1, ?HANGUL_SYLLABLES_V).
+
+lookup_hangul_syllable_T(SYL) ->
+    lookup_hangul_syllable(SYL, fun hangul_syllable_T/1, ?HANGUL_SYLLABLES_T).
+
+
+lookup_hangul_syllable(SYL, Fun, Count) ->
+    lookup_hangul_syllable(SYL, 0, Count, Fun, -1, -1).
+
+lookup_hangul_syllable(SYL, Idx, Count, _, SIdx, SLen) when Idx >= Count ->
+    if
+        SIdx == -1 -> undefined;
+        true       -> {SIdx, binary:part(SYL, SLen, byte_size(SYL) - SLen)}
+    end;
+
+lookup_hangul_syllable(SYL, Idx, Count, Fun, SIdx, SLen) ->
+    S = Fun(Idx),
+    Sz = byte_size(S),
+    case SYL of
+        <<S:Sz/binary,_/binary>> when Sz > SLen ->
+            lookup_hangul_syllable(SYL, Idx+1, Count, Fun, Idx, Sz);
+        _ ->
+            lookup_hangul_syllable(SYL, Idx+1, Count, Fun, SIdx, SLen)
+    end.
+
+
+control_name_lookup(Tokens) ->
+    case iolist_to_binary(Tokens) of
+        <<$<,Rest/binary>> when byte_size(Rest) > 0 ->
+            case binary:last(Rest) of
+                $> ->
+                    Name = binary:part(Rest, 0, byte_size(Rest)-1),
+                    ucd_name_alias_lookup(Name, control);
+                _ ->
+                    undefined
+            end;
+        Name ->
+            ucd_name_alias_lookup(Name, control)
+    end.
 
 
 codepoint_make_name(Prefix, CP) when CP =< 16#FFFF ->
@@ -232,6 +358,13 @@ codepoint_make_display_name(Prefix, CP) when CP =< 16#FFFF ->
 
 codepoint_make_display_name(Prefix, CP) ->
     iolist_to_binary([$<, Prefix, io_lib:format("~.16B", [CP]), $>]).
+
+
+bin_to_hex(String) ->
+    case io_lib:fread("~16u", String) of
+        {ok,[V],[]} -> V;
+        _           -> undefined
+    end.
 
 
 -ifdef(TEST).
@@ -312,6 +445,45 @@ codepoint_display_name_test_() -> [
    ,?_assertEqual(<<"<reserved-0D80>">>, codepoint_display_name(16#0d80))
 
    ,?_assertEqual(<<"<noncharacter-FFFF>">>, codepoint_display_name(16#ffff))
+].
+
+codepoint_lookup_test_() -> [
+    ?_assertEqual($0,    codepoint_lookup(<<"DiGit zERO">>))
+   ,?_assertEqual(1029,  codepoint_lookup(<<"CYRILLIC CAPITAL LETTER DZE">>))
+   ,?_assertEqual(41287, codepoint_lookup(<<"YI SYLLABLE DDOP">>))
+
+   ,?_assertEqual(16#fe18,
+                  codepoint_lookup(<<"PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRACKET">>))
+   ,?_assertEqual(16#fe18,
+                  codepoint_lookup(<<"PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRAKCET">>))
+   ,?_assertEqual(8472,  codepoint_lookup(<<"WEIERSTRASS ELLIPTIC FUNCTION">>))
+
+   ,?_assertEqual(71217, codepoint_lookup(<<"MODI VOWEL SIGN I">>))
+   ,?_assertEqual(65505, codepoint_lookup(<<"fullwidth pound sign">>))
+
+   ,?_assertEqual(42922, codepoint_lookup(<<"latin-capital-letter-h-with-hook">>))
+   ,?_assertEqual(13017, codepoint_lookup(<<"CIRCLED KATAKANA KO">>))
+
+   ,?_assertEqual(16#3400,   codepoint_lookup(<<"CJK UNIFIED IDEOGRAPH-3400">>))
+   ,?_assertEqual(16#f9dd,   codepoint_lookup(<<"CJK COMPATIBILITY IDEOGRAPH-F9DD">>))
+   ,?_assertEqual(16#20000,  codepoint_lookup(<<"CJK UNIFIED IDEOGRAPH-20000">>))
+   ,?_assertEqual(not_found, codepoint_lookup(<<"CJK UNIFIED IDEOGRAPH-F999">>))
+
+   ,?_assertEqual(16#17000, codepoint_lookup(<<"TANGUT IDEOGRAPH-17000">>))
+
+   ,?_assertMatch(16#ac00, codepoint_lookup(<<"HANGUL SYLLABLE GA">>))
+   ,?_assertMatch(16#b5bc, codepoint_lookup(<<"HANGUL SYLLABLE DDE">>))
+   ,?_assertMatch(16#b7a4, codepoint_lookup(<<"HANGUL SYLLABLE RAELS">>))
+   ,?_assertMatch(16#c67f, codepoint_lookup(<<"HANGUL SYLLABLE OED">>))
+   ,?_assertMatch(16#c6e8, codepoint_lookup(<<"HANGUL SYLLABLE WE">>))
+   ,?_assertMatch(16#d7a3, codepoint_lookup(<<"HANGUL SYLLABLE HIH">>))
+
+   ,?_assertEqual(7,     codepoint_lookup(<<"BEL">>))
+   ,?_assertEqual(65024, codepoint_lookup(<<"VS1">>))
+
+   ,?_assertEqual(7,   codepoint_lookup(<<"<ALERT>">>))
+   ,?_assertEqual(0,   codepoint_lookup(<<"<NULL>">>))
+   ,?_assertEqual($\n, codepoint_lookup(<<"LINE FEED">>))
 ].
 
 -endif.
