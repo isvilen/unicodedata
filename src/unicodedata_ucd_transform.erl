@@ -320,7 +320,7 @@ forms({ucd_east_asian_width, 1}, State) ->
 
 forms({ucd_codepoint_name, 1}, State0) ->
     {Data, State1} = codepoints_data(State0),
-    {codepoint_name_funs_ast(Data), State1};
+    ensure_common_properties_index(codepoint_name_funs_ast(Data), State1);
 
 forms({ucd_codepoint_name_lookup, 1}, State0) ->
     {CPs, State1} = codepoints_data(State0),
@@ -1007,18 +1007,18 @@ name_aliases_fun_ast(Name, Type, Data) ->
 
 
 codepoint_name_funs_ast(Data) ->
-    Cases = lists:filtermap(fun codepoint_name_case_ast/1, Data),
-    Cases1 = Cases ++ [?Q("_ -> undefined")],
+    Data1 = list_to_tuple([codepoint_name_data(CP) || CP <- Data]),
     [?Q(["ucd_codepoint_name(CP) ->"
-        ,"  case CP of"
-        ,"   _ -> _@_@Cases1"
+        ,"  case ucd_properties_idx(CP) of"
+        ,"   undefined -> undefined;"
+        ,"   Idx       -> element(Idx+1, _@Data1@)"
         ,"  end."
         ])].
 
-codepoint_name_case_ast({CP,<<C,_/binary>>=N,_,_,_,_,_,_,_,_,_}) when C /= $< ->
-    {true, ?Q("_@CP@ -> _@N@")};
-codepoint_name_case_ast(_) ->
-    false.
+codepoint_name_data({_,<<C,_/binary>>=N,_,_,_,_,_,_,_,_,_}) when C /= $< ->
+    N;
+codepoint_name_data(_) ->
+    undefined.
 
 
 normalize_name_funs_ast() ->

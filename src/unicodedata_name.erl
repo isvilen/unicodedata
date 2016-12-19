@@ -395,7 +395,15 @@ codepoint_block_test_() -> [
 ].
 
 codepoint_name_test_() -> [
-    ?_assertEqual(<<"HANGUL SYLLABLE GA">>, codepoint_name(44032))
+    ?_assertEqual(<<"LATIN CAPITAL LETTER A">>, codepoint_name($A))
+
+   ,?_assertEqual(<<"CYRILLIC CAPITAL LETTER DZE">>, codepoint_name(1029))
+
+   ,?_assertEqual(<<"YI SYLLABLE DDOP">>, codepoint_name(41287))
+
+   ,?_assertEqual(<<"SCRIPT CAPITAL P">>, codepoint_name(8472))
+
+   ,?_assertEqual(<<"HANGUL SYLLABLE GA">>, codepoint_name(44032))
 
    ,?_assertEqual(<<"HANGUL SYLLABLE MIL">>, codepoint_name(48128))
 
