@@ -7,6 +7,7 @@
         , is_bidirectional_explicit/1
         , is_mirrored/1
         , mirroring_glyph/1
+        , bracket/1
         ]).
 
 
@@ -98,6 +99,11 @@ mirroring_glyph(CP) ->
     ucd_bidi_mirroring_glyph(CP).
 
 
+-spec bracket(char()) -> {open, char()} | {close, char()} | none.
+bracket(CP) ->
+    ucd_bidi_brackets(CP).
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -173,6 +179,17 @@ mirroring_glyph_test_() -> [
    ,?_assertEqual($«, mirroring_glyph($»))
    ,?_assertEqual($», mirroring_glyph($«))
    ,?_assertEqual(none, mirroring_glyph($*))
+].
+
+
+bracket_test_() -> [
+    ?_assertEqual({open, $]},  bracket($[))
+   ,?_assertEqual({close, $[}, bracket($]))
+   ,?_assertEqual({open, 16#2773},  bracket(16#2772))
+   ,?_assertEqual({close, 16#2772}, bracket(16#2773))
+   ,?_assertEqual(none, bracket($»))
+   ,?_assertEqual(none, bracket($«))
+   ,?_assertEqual(none, bracket($*))
 ].
 
 -endif.

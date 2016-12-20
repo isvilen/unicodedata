@@ -134,6 +134,7 @@ forms(Funs) ->
     State = #{ data => undefined
              , common_properties => undefined
              , ranges => undefined
+             , bidi_mirroring => undefined
              , blocks => undefined
              , prop_list => undefined
              , special_casing => undefined
@@ -181,8 +182,15 @@ forms({ucd_bidi_mirrored, 1}, State0) ->
             ],
     ensure_common_properties_index(Forms, State2);
 
-forms({ucd_bidi_mirroring_glyph, 1}, State) ->
-    {[bidi_mirroring_glyph_fun_ast()], State};
+forms({ucd_bidi_mirroring_glyph, 1}, State0) ->
+    {Data, State1} = bidi_mirroring_data(State0),
+    {[bidi_mirroring_glyph_fun_ast(Data)], State1};
+
+forms({ucd_bidi_brackets, 1}, State0) ->
+    {CPs, State1} = codepoints_data(State0),
+    {BidiMirroring, State2} = bidi_mirroring_data(State1),
+    {DecompData, State3} = decomposition_data(State2),
+    {[bidi_brackets_fun_ast(BidiMirroring, CPs, DecompData)], State3};
 
 forms({ucd_numeric, 1}, State0) ->
     {Data, State1} = numeric_data(State0),
@@ -427,6 +435,14 @@ ranges_data(#{ranges := undefined}=State0) ->
 
 ranges_data(#{ranges := Ranges}=State) ->
     {Ranges, State}.
+
+
+bidi_mirroring_data(#{bidi_mirroring := undefined}=State) ->
+    Data = unicodedata_ucd:bidi_mirroring(),
+    {Data, State#{bidi_mirroring := Data}};
+
+bidi_mirroring_data(#{bidi_mirroring := Data}=State) ->
+    {Data, State}.
 
 
 blocks_data(#{blocks := undefined}=State) ->
@@ -749,10 +765,80 @@ bidi_mirrored_fun_ast() ->
        ,"  end."]).
 
 
-bidi_mirroring_glyph_fun_ast() ->
-    Data = unicodedata_ucd:bidi_mirroring(),
+bidi_mirroring_glyph_fun_ast(Data) ->
     Rs = range_values(unicodedata_ucd:sort_by_codepoints(Data)),
     range_fun_ast(ucd_bidi_mirroring_glyph, Rs, ?Q("none")).
+
+
+bidi_brackets_fun_ast(BidiMirroring, CPs, Decomp) ->
+    Data = bidi_brackets_data(BidiMirroring, CPs, Decomp),
+    Rs = range_values([{CP, {Type, OCPs}} || {Type, CP, OCPs} <- Data]),
+    range_fun_ast(ucd_bidi_brackets, Rs, ?Q("none")).
+
+
+bidi_brackets_data(BidiMirroring, Codepoints, Decomp) ->
+    BidiMap = maps:from_list(BidiMirroring),
+    BracketsMap = brackets_data(Codepoints),
+    EqMap = canonical_equivalence_data(Decomp),
+    bidi_brackets_data(BidiMirroring, BidiMap, BracketsMap, EqMap, []).
+
+
+bidi_brackets_data([], _, _, _, Acc) ->
+    lists:reverse(Acc);
+
+bidi_brackets_data([{CP1, CP2} | Rest], BidiMap, BracketsMap, EqMap, AccIn) ->
+    AccOut = case maps:get(CP1, BracketsMap, undefined) of
+                 undefined ->
+                     AccIn;
+                 Type ->
+                     OCPs = bidi_bracket_opposites(CP1, CP2, BidiMap, EqMap),
+                     [{Type, CP1, OCPs} | AccIn]
+             end,
+    bidi_brackets_data(Rest, BidiMap, BracketsMap, EqMap, AccOut).
+
+
+bidi_bracket_opposites(CP1, CP2, BidiMap, EqMap) ->
+    case maps:get(CP1, EqMap, undefined) of
+        undefined ->
+            [CP2];
+        CP ->
+            case maps:get(CP, BidiMap, undefined) of
+                undefined -> [CP2];
+                DCP2      -> [CP2, DCP2]
+            end
+    end.
+
+
+brackets_data(CPs) -> brackets_data(CPs, #{}).
+
+brackets_data([], Acc) ->
+    Acc;
+
+brackets_data([{CP,_,Cat,_,'ON',_,_,true,_,_,_} | CPs], Acc0) ->
+    Acc1 = case Cat of
+        'Ps' -> Acc0#{CP => open};
+        'Pe' -> Acc0#{CP => close};
+        _    -> Acc0
+    end,
+    brackets_data(CPs, Acc1);
+
+brackets_data([_ | CPs], Acc) ->
+    brackets_data(CPs, Acc).
+
+
+canonical_equivalence_data(Decomp) ->
+    canonical_equivalence_data(Decomp, #{}).
+
+canonical_equivalence_data([], Acc) ->
+    Acc;
+
+canonical_equivalence_data([{CP1, [CP2]} | Rest], Acc0) ->
+    Acc1 = Acc0#{CP1 => CP2},
+    Acc2 = Acc1#{CP2 => CP1},
+    canonical_equivalence_data(Rest, Acc2);
+
+canonical_equivalence_data([_ | Rest], Acc) ->
+    canonical_equivalence_data(Rest, Acc).
 
 
 case_mapping_funs_ast(MappingProperties, Name, IdxName, DataName) ->
