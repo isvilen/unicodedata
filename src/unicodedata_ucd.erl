@@ -107,17 +107,23 @@ fold_lines_fun(Fun, false, false) ->
 fold_lines_1(_, Acc, [<<>>], _) ->
     Acc;
 
-fold_lines_1(Fun, Acc0, [Bin, Rest], true) ->
-    Acc1 = case string:strip(binary_to_list(Bin), right, $\n) of
-               ""       -> Acc0;
-               "#" ++ _ -> Acc0;
-               Data     -> Fun(Data, Acc0)
-           end,
-    fold_lines_1(Fun, Acc1, binary:split(Rest, <<"\n">>), true);
+fold_lines_1(Fun, Acc, [Bin], SkipEmpty) ->
+    fold_lines_2(Fun, Acc, Bin, SkipEmpty);
 
-fold_lines_1(Fun, Acc0, [Bin, Rest], false) ->
+fold_lines_1(Fun, Acc0, [Bin, Rest], SkipEmpty) ->
+    Acc1 = fold_lines_2(Fun, Acc0, Bin, SkipEmpty),
+    fold_lines_1(Fun, Acc1, binary:split(Rest, <<"\n">>), SkipEmpty).
+
+fold_lines_2(Fun, Acc, Bin, true) ->
+    case string:strip(binary_to_list(Bin), right, $\n) of
+        ""       -> Acc;
+        "#" ++ _ -> Acc;
+        Data     -> Fun(Data, Acc)
+    end;
+
+fold_lines_2(Fun, Acc, Bin, false) ->
     Data = string:strip(binary_to_list(Bin), right, $\n),
-    fold_lines_1(Fun, Fun(Data, Acc0), binary:split(Rest, <<"\n">>), false).
+    Fun(Data, Acc).
 
 
 data_dir() ->
