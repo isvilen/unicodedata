@@ -1,11 +1,12 @@
 -module(bidirectional_tests).
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_TIMEOUT,15).
+-define(TEST_TIMEOUT,60).
 
 
 bidi_test_() -> {timeout, ?TEST_TIMEOUT,
   fun () ->
+      File = "BidiTest.txt",
       ClassToCP = bidi_class_to_codepoint(),
       unicodedata_ucd:fold_lines(
         fun ("@Levels:" ++ L, {LineNo, _, Reorder}) ->
@@ -24,22 +25,41 @@ bidi_test_() -> {timeout, ?TEST_TIMEOUT,
                 Classes = parse_bidi_classes(F0),
                 Bitset = parse_integer(F1),
                 CPs = codepoints_from_bidi_classes(Classes, ClassToCP),
-                bidi_test(LineNo, Classes, CPs, Bitset, Levels, Reorder),
+                bidi_test(File, LineNo, Classes, CPs, Bitset, Levels, Reorder),
                 {LineNo + 1, Levels, Reorder}
         end
-        ,test_data_file("BidiTest.txt")
+        ,test_data_file(File)
         ,{1, undefined, undefined}
         ,[])
   end}.
 
 
-bidi_test(LineNo, Classes, CPs, Bitset, Levels, Reorder) ->
+bidi_test(File, LineNo, Classes, CPs, Bitset, Levels, Reorder) ->
     OutCPs = reordered_codepoints(CPs, Levels, Reorder),
-    {LineNo, Classes, Bitset, Levels, Reorder, CPs, OutCPs}.
+    bidi_test(File, LineNo, Classes, CPs, (Bitset band 1), Levels, Reorder, OutCPs),
+    bidi_test(File, LineNo, Classes, CPs, (Bitset band 2), Levels, Reorder, OutCPs),
+    bidi_test(File, LineNo, Classes, CPs, (Bitset band 4), Levels, Reorder, OutCPs).
+
+
+bidi_test(_File, _LineNo, _Classes, _CPs, 0, _Levels, _Reorder, _OutCPs) ->
+    ok;
+bidi_test(File, LineNo, _Classes, CPs, PLevel, Levels, Reorder, OutCPs) ->
+    P = case PLevel of
+            1 -> unicodedata_bidirectional:paragraph(CPs);
+            2 -> unicodedata_bidirectional:paragraph(CPs, 0);
+            4 -> unicodedata_bidirectional:paragraph(CPs, 1)
+        end,
+    check(File, LineNo, {levels, {paragraph_level, PLevel}},
+          unicodedata_bidirectional:embedding_levels(P), Levels),
+    check(File, LineNo, {indices, {paragraph_level, PLevel}},
+          unicodedata_bidirectional:reorder_indices(P), Reorder),
+    check(File, LineNo, {reorder, {paragraph_level, PLevel}},
+          unicodedata_bidirectional:reorder(P), OutCPs).
 
 
 bidi_character_test_() -> {timeout, ?TEST_TIMEOUT,
   fun () ->
+      File = "BidiCharacterTest.txt",
       unicodedata_ucd:fold_lines(
         fun ([F0, F1, F2, F3, F4], LineNo) ->
             CPs = unicodedata_ucd:parse_codepoints(F0),
@@ -47,19 +67,42 @@ bidi_character_test_() -> {timeout, ?TEST_TIMEOUT,
             ParEmbLvl = parse_integer(F2),
             Lvls = parse_levels(F3),
             Idxs = parse_indexes(F4),
-            bidi_character_test(LineNo, CPs, ParDir, ParEmbLvl, Lvls, Idxs),
+            bidi_character_test(File, LineNo, CPs, ParDir, ParEmbLvl, Lvls, Idxs),
             LineNo + 1;
             (_, LineNo) -> LineNo + 1
         end
-        ,test_data_file("BidiCharacterTest.txt")
+        ,test_data_file(File)
         ,1
         ,[fields])
   end}.
 
 
-bidi_character_test(LineNo, CPs, ParDir, ParEmbLvl, Lvls, Idxs) ->
+bidi_character_test(File, LineNo, CPs, ParDir, ParEmbLvl, Lvls, Idxs) ->
     OutCPs = reordered_codepoints(CPs, Lvls, Idxs),
-    {LineNo, CPs, ParDir, ParEmbLvl, Lvls, Idxs, OutCPs}.
+    P = case ParDir of
+            2 -> unicodedata_bidirectional:paragraph(CPs);
+            _ -> unicodedata_bidirectional:paragraph(CPs, ParDir)
+        end,
+    check(File, LineNo, embedding_level,
+          unicodedata_bidirectional:embedding_level(P), ParEmbLvl),
+    check(File, LineNo, levels,
+          unicodedata_bidirectional:embedding_levels(P), Lvls),
+    check(File, LineNo, indices,
+          unicodedata_bidirectional:reorder_indices(P), Idxs),
+    check(File, LineNo, reorder,
+          unicodedata_bidirectional:reorder(P), OutCPs).
+
+
+check(File, LineNo, Value, Actual, Expected) ->
+    case Actual of
+        Expected -> ok;
+        _ -> erlang:error({assert, [ {file, File}
+                                   , {line, LineNo}
+                                   , {value, Value}
+                                   , {expected, Expected}
+                                   , {actual, Actual}
+                                   ]})
+    end.
 
 
 test_data_file(TestFile) ->
@@ -89,11 +132,11 @@ codepoints_from_bidi_classes(Classes, ClassToCPs) ->
 
 
 parse_levels(Bin) when is_binary(Bin) ->
-    [case B of <<"x">> -> x; _ -> parse_integer(B) end
+    [case B of <<"x">> -> hide; _ -> parse_integer(B) end
      || B <- binary:split(Bin, <<" ">>, [global])];
 
 parse_levels(Line) ->
-    [case T of "x" -> x; _ -> list_to_integer(T) end
+    [case T of "x" -> hide; _ -> list_to_integer(T) end
      || T <- string:tokens(Line, [$\s, $\t])].
 
 
@@ -117,7 +160,7 @@ parse_integer(V) ->
 
 reordered_codepoints(_, [], []) ->
     [];
-reordered_codepoints(CPs, [x|Lvls], Idxs) ->
+reordered_codepoints(CPs, [hide|Lvls], Idxs) ->
     reordered_codepoints(CPs, Lvls, Idxs);
 reordered_codepoints(CPs, [_|Lvls], [Idx|Idxs]) ->
     [lists:nth(Idx+1, CPs) | reordered_codepoints(CPs, Lvls, Idxs)].
