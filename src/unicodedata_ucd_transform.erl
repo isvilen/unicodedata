@@ -866,28 +866,28 @@ case_mapping_fun_ast(Name, IdxName, DataName) ->
 
 
 special_casing_funs_ast(Data, lower) ->
-    Data1 = [{CP, V, Cond} || {CP, V, _, _, Cond} <- Data, V /= CP],
+    Data1 = [{CP, V, Cond} || {CP, V, _, _, Cond} <- Data, V /= [CP]],
     special_casing_funs_ast_1(Data1
                              ,ucd_special_casing_lower
                              ,ucd_special_casing_lower_idx
                              ,ucd_special_casing_lower_data);
 
 special_casing_funs_ast(Data, title) ->
-    Data1 = [{CP, V, Cond} || {CP, _, V, _, Cond} <- Data, V /= CP],
+    Data1 = [{CP, V, Cond} || {CP, _, V, _, Cond} <- Data, V /= [CP]],
     special_casing_funs_ast_1(Data1
                              ,ucd_special_casing_title
                              ,ucd_special_casing_title_idx
                              ,ucd_special_casing_title_data);
 
 special_casing_funs_ast(Data, upper) ->
-    Data1 = [{CP, V, Cond} || {CP, _, _, V, Cond} <- Data, V /= CP],
+    Data1 = [{CP, V, Cond} || {CP, _, _, V, Cond} <- Data, V /= [CP]],
     special_casing_funs_ast_1(Data1
                              ,ucd_special_casing_upper
                              ,ucd_special_casing_upper_idx
                              ,ucd_special_casing_upper_data).
 
 special_casing_funs_ast_1(Data, Name, IdxName, DataName) ->
-    Data1 = unicodedata_ucd:sort_by_codepoints(Data),
+    Data1 = special_casing_values(Data),
     [special_casing_index_fun_ast(IdxName, Data1)
     ,special_casing_data_fun_ast(DataName, Data1)
     ,special_casing_fun_ast(Name, IdxName, DataName)].
@@ -898,7 +898,7 @@ special_casing_index_fun_ast(Name, Data) ->
 
 
 special_casing_data_fun_ast(Name, Data) ->
-    Data1 = list_to_tuple([{V, Cond} || {_,V, Cond} <- Data]),
+    Data1 = list_to_tuple([Vs || {_, Vs} <- Data]),
     ?Q(["'@Name@'(Index) ->"
         "    element(Index + 1, _@Data1@)."
        ]).
@@ -911,6 +911,30 @@ special_casing_fun_ast(Name, IdxName, DataName) ->
        ,"    Idx       -> '@DataName@'(Idx)"
        ," end."
        ]).
+
+
+special_casing_values(Data) ->
+    Data1 = lists:foldl(fun special_casing_values_1/2, #{}, Data),
+    unicodedata_ucd:sort_by_codepoints(maps:to_list(Data1)).
+
+
+special_casing_values_1({CP, V, Cond}, Acc) ->
+    case maps:get(CP, Acc, undefined) of
+        undefined ->
+            Acc#{CP => [special_casing_value(Cond, V)]};
+        Vs ->
+            Acc#{CP => [special_casing_value(Cond,  V) | Vs]}
+    end.
+
+
+special_casing_value([Lang, Ctx], V) when is_binary(Lang), is_atom(Ctx) ->
+    {{Lang, Ctx}, V};
+
+special_casing_value([LangOrCtx], V) ->
+    {LangOrCtx, V};
+
+special_casing_value([], V) ->
+    V.
 
 
 numeric_index_fun_ast(NumericProperties) ->

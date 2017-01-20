@@ -5,7 +5,9 @@
         , is_cased/1
         , is_case_ignorable/1
         , to_uppercase/1
+        , to_uppercase/2
         , to_lowercase/1
+        , to_lowercase/2
         ]).
 
 
@@ -32,47 +34,121 @@ is_case_ignorable(CP) ->
 
 -spec to_uppercase(string()) -> string().
 to_uppercase(String) ->
-    convert_case(String, fun uppercase_mapping/1, []).
+    convert_case(String, fun uppercase_mapping/4, undefined).
+
+
+-spec to_uppercase(string(), Lang :: binary()) -> string().
+to_uppercase(String, Lang) ->
+    convert_case(String, fun uppercase_mapping/4, Lang).
 
 
 -spec to_lowercase(string()) -> string().
 to_lowercase(String) ->
-    convert_case(String, fun lowercase_mapping/1, []).
+    convert_case(String, fun lowercase_mapping/4, undefined).
 
 
-uppercase_mapping(CP) ->
+-spec to_lowercase(string(), Lang :: binary()) -> string().
+to_lowercase(String, Lang) ->
+    convert_case(String, fun lowercase_mapping/4, Lang).
+
+
+uppercase_mapping(CP, Prefix, Suffix, Lang) ->
     case ucd_special_casing(CP, upper) of
-        {V, []} ->
-            V;
-        _ ->
-            case ucd_uppercase_mapping(CP) of
-                undefined -> CP;
+        undefined ->
+            simple_uppercase_mapping(CP);
+        Vs ->
+            case special_casing(Prefix, Suffix, Lang, Vs) of
+                undefined -> simple_uppercase_mapping(CP);
                 V         -> V
             end
     end.
 
 
-lowercase_mapping(CP) ->
+simple_uppercase_mapping(CP) ->
+    case ucd_uppercase_mapping(CP) of
+        undefined -> CP;
+        V         -> V
+    end.
+
+
+lowercase_mapping(CP, Prefix, Suffix, Lang) ->
     case ucd_special_casing(CP, lower) of
-        {V, []} ->
-            V;
-        _ ->
-            case ucd_lowercase_mapping(CP) of
-                undefined -> CP;
+        undefined ->
+            simple_lowercase_mapping(CP);
+        Vs ->
+            case special_casing(Prefix, Suffix, Lang, Vs) of
+                undefined -> simple_lowercase_mapping(CP);
                 V         -> V
             end
     end.
 
-            
-convert_case([], _, Acc) ->
+
+simple_lowercase_mapping(CP) ->
+    case ucd_lowercase_mapping(CP) of
+        undefined -> CP;
+        V         -> V
+    end.
+
+
+special_casing(_Prefix, _Suffix, _Lang, []) ->
+    undefined;
+
+special_casing(_Prefix, _Suffix, _Lang, [V | _]) when is_list(V) ->
+    V;
+
+special_casing(_Prefix, _Suffix, Lang, [{Lang, V} | _]) ->
+    V;
+
+special_casing(Prefix, Suffix, Lang, [{{Lang, Ctx},V} | Vs]) ->
+    case special_casing_context(Ctx, Prefix, Suffix) of
+        true  -> V;
+        false -> special_casing(Prefix, Suffix, Lang, Vs)
+    end;
+
+special_casing(Prefix, Suffix, Lang, [{Ctx, V} | Vs]) when is_atom(Ctx) ->
+    case special_casing_context(Ctx, Prefix, Suffix) of
+        true  -> V;
+        false -> special_casing(Prefix, Suffix, Lang, Vs)
+    end;
+
+special_casing(Prefix, Suffix, Lang, [_|Vs]) ->
+    special_casing(Prefix, Suffix, Lang, Vs).
+
+
+-define(COMBINING_DOT_ABOVE,16#0307).
+
+special_casing_context(not_before_dot, Prefix, Suffix) ->
+    not special_casing_context(before_dot, Prefix, Suffix);
+
+special_casing_context(before_dot, _, Suffix) ->
+    case Suffix of
+        [?COMBINING_DOT_ABOVE | _] -> true;
+        _                          -> false
+    end;
+
+special_casing_context(after_I, Prefix, _) ->
+    case Prefix of
+        [$I | _] -> true;
+        _        -> false
+    end;
+
+special_casing_context(_, _, _) ->
+    false.
+
+
+convert_case(String, Fun, Lang) ->
+    convert_case(String, Fun, Lang, [], []).
+
+
+convert_case([], _, _, _, Acc) ->
     lists:reverse(Acc);
 
-convert_case([CP|CPs], Fun, AccIn) ->
-    AccOut = case Fun(CP) of
+convert_case([CP|CPs], Fun, Lang, Prefix, AccIn) ->
+    AccOut = case Fun(CP, Prefix, CPs, Lang) of
                  Vs when is_list(Vs) -> push(Vs, AccIn);
                  V                   -> [V | AccIn]
              end,
-    convert_case(CPs, Fun, AccOut).
+    convert_case(CPs, Fun, Lang, [CP | Prefix], AccOut).
 
 
 push([], Chars)       -> Chars;
@@ -145,6 +221,9 @@ to_uppercase_test_() -> [
 
    ,?_assertEqual(             "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ"
                  ,to_uppercase("àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþ"))
+
+   ,?_assertEqual("I", to_uppercase("i"))
+   ,?_assertEqual([16#0130], to_uppercase("i", <<"tr">>))
 ].
 
 to_lowercase_test_() -> [
@@ -161,6 +240,11 @@ to_lowercase_test_() -> [
 
    ,?_assertEqual(             "àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþ"
                  ,to_lowercase("ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ"))
+
+   ,?_assertEqual("i", to_lowercase("I"))
+   ,?_assertEqual([16#0131], to_lowercase("I", <<"tr">>))
+   ,?_assertEqual([$i, 16#0307], to_lowercase([$I, 16#307]))
+   ,?_assertEqual("i", to_lowercase([$I, 16#307], <<"tr">>))
 ].
 
 -endif.
