@@ -51,6 +51,9 @@ collect_ucd_funs_1(File, AST, UcdFuns) ->
         ?Q("ucd_special_casing(_@CP, _@V)") ->
             collect_ucd_fun_replace(ucd_special_casing, [CP, V], File, UcdFuns);
 
+        ?Q("ucd_combining_class(_@CP, _@V)") ->
+            collect_ucd_fun(ucd_combining_class, [CP, V], File, UcdFuns);
+
         ?Q("'@Name'(_@@Args)") ->
             collect_ucd_funs_2(AST, Name, length(Args), UcdFuns);
 
@@ -139,7 +142,15 @@ ucd_fun_args(ucd_line_break, [_, V], File) ->
 
 ucd_fun_args(ucd_special_casing, [_, V], File) ->
     Value = ucd_fun_atom_arg(ucd_special_casing, 2, V, File),
-    ucd_fun_validate_arg(Value, [upper, lower, title], File, V).
+    ucd_fun_validate_arg(Value, [upper, lower, title], File, V);
+
+ucd_fun_args(ucd_combining_class, [_, Arg], File) ->
+    case Arg of
+        ?Q("not _@Arg1") ->
+            {'not', ucd_fun_int_list_arg(ucd_combining_class, 2, Arg1, File)};
+        _  ->
+            ucd_fun_int_list_arg(ucd_combining_class, 2, Arg, File)
+    end.
 
 
 ucd_fun_atom_arg(FunName, ArgPos, Arg, File) ->
@@ -166,6 +177,30 @@ ucd_fun_atom_list_arg(FunName, ArgPos, Arg, File) ->
         _ ->
             error(File, Arg,
                   "atom or list of atoms expected as argument ~p of ~s function",
+                  [ArgPos, FunName])
+    catch
+        error:badarg ->
+            error(File, Arg, "invalid argument ~p of ~s function",
+                  [ArgPos, FunName])
+    end.
+
+
+ucd_fun_int_list_arg(FunName, ArgPos, Arg, File) ->
+    try erl_syntax:concrete(Arg) of
+        V  when is_integer(V) ->
+            [V];
+        Vs when is_list(Vs) ->
+            case lists:all(fun erlang:is_integer/1, Vs) of
+                true ->
+                    Vs;
+                false ->
+                    error(File, Arg,
+                          "list of integers expected as argument ~p of ~s function",
+                          [ArgPos, FunName])
+            end;
+        _ ->
+            error(File, Arg,
+                  "integer or list of integers expected as argument ~p of ~s function",
                   [ArgPos, FunName])
     catch
         error:badarg ->
@@ -229,6 +264,10 @@ forms({ucd_combining_class, 1}, State0) ->
             , combining_class_fun_ast()
             ],
     ensure_common_properties_index(Forms, State2);
+
+forms({ucd_combining_class, Name, Classes}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {[combining_class_fun_ast(Name, Classes, Data)], State1};
 
 forms({ucd_bidi_class, 1}, State0) ->
     {Properties, State1} = common_properties_data(State0),
@@ -742,6 +781,19 @@ combining_class_fun_ast() ->
        ,"    undefined -> ucd_combining_class_range_data(CP);"
        ,"    Idx       -> ucd_combining_class_data(Idx)"
        ,"  end."]).
+
+
+combining_class_fun_ast(Name, Classes, Data) ->
+    Cs = case Classes of
+             {'not', Vs} ->
+                 AllVs = sets:from_list(lists:seq(0, 240)),
+                 sets:subtract(AllVs, sets:from_list(Vs));
+             _ ->
+                 sets:from_list(Classes)
+         end,
+    Data1 = [CP || {CP, _,_,CC,_,_,_,_,_,_,_} <- Data, sets:is_element(CC, Cs)],
+    Ranges = [{F, T, true} || {F, T} <- compact_ranges(Data1)],
+    range_fun_ast(Name, Ranges, ?Q("false")).
 
 
 bidi_class_data_fun_ast(CommonProperties) ->
