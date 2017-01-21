@@ -121,15 +121,43 @@ special_casing_context(not_before_dot, Prefix, Suffix) ->
     not special_casing_context(before_dot, Prefix, Suffix);
 
 special_casing_context(before_dot, _, Suffix) ->
-    case Suffix of
+    case skip_combining_classes_other_than_0_and_230(Suffix) of
         [?COMBINING_DOT_ABOVE | _] -> true;
         _                          -> false
     end;
 
+special_casing_context(more_above, _, Suffix) ->
+    case skip_combining_classes_other_than_0_and_230(Suffix) of
+        [CP | _] -> ucd_combining_class(CP, 230);
+        _        -> false
+    end;
+
 special_casing_context(after_I, Prefix, _) ->
-    case Prefix of
+    case skip_combining_classes_other_than_0_and_230(Prefix) of
         [$I | _] -> true;
         _        -> false
+    end;
+
+special_casing_context(after_soft_dotted, Prefix, _) ->
+    case skip_combining_classes_other_than_0_and_230(Prefix) of
+        [CP | _] -> ucd_has_property(CP, soft_dotted);
+        _        -> false
+    end;
+
+special_casing_context(final_sigma, Prefix, Suffix) ->
+    case skip_case_ignorable(Prefix) of
+        [CP1 | _] ->
+            case is_cased(CP1) of
+                true ->
+                    case skip_case_ignorable(Suffix) of
+                        [CP2 | _] -> not is_cased(CP2);
+                        _         -> true
+                    end;
+                false ->
+                    false
+            end;
+        _ ->
+            false
     end;
 
 special_casing_context(_, _, _) ->
@@ -149,6 +177,26 @@ convert_case([CP|CPs], Fun, Lang, Prefix, AccIn) ->
                  V                   -> [V | AccIn]
              end,
     convert_case(CPs, Fun, Lang, [CP | Prefix], AccOut).
+
+
+skip_case_ignorable([]) ->
+    [];
+
+skip_case_ignorable([CP | CPs] = String) ->
+    case is_case_ignorable(CP) of
+        true  -> skip_case_ignorable(CPs);
+        false -> String
+    end.
+
+
+skip_combining_classes_other_than_0_and_230([]) ->
+    [];
+
+skip_combining_classes_other_than_0_and_230([CP | CPs] = String) ->
+    case ucd_combining_class(CP, not [0, 230]) of
+        true  -> skip_combining_classes_other_than_0_and_230(CPs);
+        false -> String
+    end.
 
 
 push([], Chars)       -> Chars;
@@ -224,6 +272,10 @@ to_uppercase_test_() -> [
 
    ,?_assertEqual("I", to_uppercase("i"))
    ,?_assertEqual([16#0130], to_uppercase("i", <<"tr">>))
+
+   ,?_assertEqual([$I, 16#307], to_uppercase([$i, 16#307]))
+   ,?_assertEqual([$I],         to_uppercase([$i, 16#307], <<"lt">>))
+   ,?_assertEqual([$I, 16#315], to_uppercase([$i, 16#315, 16#307], <<"lt">>))
 ].
 
 to_lowercase_test_() -> [
@@ -241,10 +293,19 @@ to_lowercase_test_() -> [
    ,?_assertEqual(             "àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþ"
                  ,to_lowercase("ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ"))
 
-   ,?_assertEqual("i", to_lowercase("I"))
-   ,?_assertEqual([16#0131], to_lowercase("I", <<"tr">>))
+   ,?_assertEqual("i",           to_lowercase("I"))
+   ,?_assertEqual([16#0131],     to_lowercase("I", <<"tr">>))
    ,?_assertEqual([$i, 16#0307], to_lowercase([$I, 16#307]))
-   ,?_assertEqual("i", to_lowercase([$I, 16#307], <<"tr">>))
+   ,?_assertEqual("i",           to_lowercase([$I, 16#307], <<"tr">>))
+
+   ,?_assertEqual([$i, 16#300]        , to_lowercase([$I, 16#300]))
+   ,?_assertEqual([$i, 16#307, 16#300], to_lowercase([$I, 16#300], <<"lt">>))
+
+   % final sigma
+   ,?_assertEqual([16#03C3],             to_lowercase([16#03A3]))
+   ,?_assertEqual([$a, 16#03C2],         to_lowercase([$a, 16#03A3]))
+   ,?_assertEqual([$a, $., 16#03C2, $.], to_lowercase([$a, $., 16#03A3, $.]))
+   ,?_assertEqual([$a, 16#03C3, $., $a], to_lowercase([$a, 16#03A3, $., $a]))
 ].
 
 -endif.
