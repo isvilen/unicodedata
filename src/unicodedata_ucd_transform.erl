@@ -1,5 +1,5 @@
 -module(unicodedata_ucd_transform).
--export([parse_transform/2]).
+-export([parse_transform/2, format_error/1]).
 
 -include_lib("syntax_tools/include/merl.hrl").
 
@@ -8,125 +8,191 @@ parse_transform(Forms, _Opts) ->
     Forms1 ++ forms(UcdFuns).
 
 
+format_error({Fmt, Args}) ->
+    lists:flatten(io_lib:format(Fmt, Args)).
+
+
 collect_ucd_funs(Forms) ->
-    {Forms1, UcdFuns} = lists:mapfoldr(fun collect_ucd_funs/2, sets:new(), Forms),
+    File = get_file(Forms),
+    Fun = fun (Form, UcdFuns) -> collect_ucd_funs(File, Form, UcdFuns) end,
+    {Forms1, UcdFuns} = lists:mapfoldr(Fun, sets:new(), Forms),
     {erl_syntax:revert_forms(Forms1), sets:to_list(UcdFuns)}.
 
-collect_ucd_funs(Form, UcdFuns) ->
-    erl_syntax_lib:mapfold(fun collect_ucd_funs_1/2, UcdFuns, Form).
+collect_ucd_funs(File, Form, UcdFuns0) ->
+    Fun = fun (AST, UcdFuns1) -> collect_ucd_funs_1(File, AST, UcdFuns1) end,
+    erl_syntax_lib:mapfold(Fun, UcdFuns0, Form).
 
-collect_ucd_funs_1(AST, UcdFuns) ->
+collect_ucd_funs_1(File, AST, UcdFuns) ->
     case AST of
-        ?Q("fun '@Name'/90919") ->
-            {AST, collect_ucd_funs_2(Name, erl_syntax:concrete(Q1), UcdFuns)};
         ?Q("ucd_is_category(_@CP, _@V)") ->
-            collect_ucd_category_fun(AST, CP, V, UcdFuns,
-                                     ucd_is_category,
-                                     fun unicodedata_ucd:categories/0);
+            collect_ucd_fun(ucd_is_category, [CP, V], File, UcdFuns);
+
         ?Q("ucd_has_property(_@CP, _@V)") ->
-            collect_ucd_property_fun(AST, CP, V, UcdFuns,
-                                     ucd_has_property,
-                                     fun unicodedata_ucd:prop_list_types/0);
+            collect_ucd_fun(ucd_has_property, [CP, V], File, UcdFuns);
+
         ?Q("ucd_name_aliases(_@CP, _@V)") ->
-            collect_ucd_property_fun(AST, CP, V, UcdFuns,
-                                     ucd_name_aliases,
-                                     fun unicodedata_ucd:name_aliases_types/0);
+            collect_ucd_fun(ucd_name_aliases, [CP, V], File, UcdFuns);
+
         ?Q("ucd_name_alias_lookup(_@Name, _@V)") ->
-            collect_ucd_category_fun(AST, Name, V, UcdFuns,
-                                     ucd_name_alias_lookup,
-                                     fun unicodedata_ucd:name_aliases_types/0);
+            collect_ucd_fun(ucd_name_alias_lookup, [Name, V], File, UcdFuns);
+
         ?Q("ucd_grapheme_break(_@CP, _@V)") ->
-            collect_ucd_category_fun(AST, CP, V, UcdFuns,
-                                    ucd_grapheme_break,
-                                    fun unicodedata_ucd:grapheme_break_classes/0);
+            collect_ucd_fun(ucd_grapheme_break, [CP, V], File, UcdFuns);
+
         ?Q("ucd_word_break(_@CP, _@V)") ->
-            collect_ucd_category_fun(AST, CP, V, UcdFuns,
-                                    ucd_word_break,
-                                    fun unicodedata_ucd:word_break_classes/0);
+            collect_ucd_fun(ucd_word_break, [CP, V], File, UcdFuns);
+
         ?Q("ucd_sentence_break(_@CP, _@V)") ->
-            collect_ucd_category_fun(AST, CP, V, UcdFuns,
-                                    ucd_sentence_break,
-                                    fun unicodedata_ucd:sentence_break_classes/0);
+            collect_ucd_fun(ucd_sentence_break, [CP, V], File, UcdFuns);
+
         ?Q("ucd_line_break(_@CP, _@V)") ->
-            collect_ucd_category_fun(AST, CP, V, UcdFuns,
-                                    ucd_line_break,
-                                    fun unicodedata_ucd:line_break_classes/0);
-        ?Q("ucd_special_casing(_@CP, lower)") ->
-            collect_ucd_funs_replace({ucd_special_casing_lower, 1}, CP, UcdFuns);
-        ?Q("ucd_special_casing(_@CP, title)") ->
-            collect_ucd_funs_replace({ucd_special_casing_title, 1}, CP, UcdFuns);
-        ?Q("ucd_special_casing(_@CP, upper)") ->
-            collect_ucd_funs_replace({ucd_special_casing_upper, 1}, CP, UcdFuns);
+            collect_ucd_fun(ucd_line_break, [CP, V], File, UcdFuns);
+
+        ?Q("ucd_special_casing(_@CP, _@V)") ->
+            collect_ucd_fun_replace(ucd_special_casing, [CP, V], File, UcdFuns);
+
         ?Q("'@Name'(_@@Args)") ->
-            case erl_syntax:type(Name) of
-                atom -> {AST, collect_ucd_funs_2(Name, length(Args), UcdFuns)};
-                _    -> {AST, UcdFuns}
-            end;
+            collect_ucd_funs_2(AST, Name, length(Args), UcdFuns);
+
+        ?Q("fun '@Name'/90919") ->
+            collect_ucd_funs_2(AST, Name, erl_syntax:concrete(Q1), UcdFuns);
+
         _ ->
             {AST, UcdFuns}
     end.
 
-collect_ucd_funs_2(NameAST, Arity, UcdFuns) ->
-    case erl_syntax:atom_name(NameAST) of
-        "ucd_" ++ _ ->
-            Fun = {erl_syntax:atom_value(NameAST), Arity},
-            sets:add_element(Fun, UcdFuns);
-        _ ->
-            UcdFuns
+collect_ucd_funs_2(AST, NameAST, Arity, UcdFuns0) ->
+    UcdFuns1 =
+        case erl_syntax:type(NameAST) of
+            atom ->
+                case erl_syntax:atom_name(NameAST) of
+                    "ucd_" ++ _ ->
+                        FunName = erl_syntax:atom_value(NameAST),
+                        sets:add_element({FunName, Arity}, UcdFuns0);
+                    _ ->
+                        UcdFuns0
+                end;
+            _ ->
+                UcdFuns0
+        end,
+    {AST, UcdFuns1}.
+
+
+collect_ucd_fun(FunName, FunArgs, File, UcdFuns) ->
+    Args = ucd_fun_args(FunName, FunArgs, File),
+    NewName = ucd_fun_unique_name(FunName, sets:size(UcdFuns)),
+    NewAST = ucd_fun_new_ast(FunName, NewName, FunArgs),
+    {NewAST, sets:add_element({FunName, NewName, Args}, UcdFuns)}.
+
+
+collect_ucd_fun_replace(FunName, FunArgs, File, UcdFuns) ->
+    Args = ucd_fun_args(FunName, FunArgs, File),
+    NewName = ucd_fun_replace_name(FunName, Args),
+    NewAST = ucd_fun_new_ast(FunName, NewName, FunArgs),
+    {NewAST, sets:add_element({FunName, Args}, UcdFuns)}.
+
+
+ucd_fun_unique_name(Prefix, UniqueId) ->
+    list_to_atom(atom_to_list(Prefix) ++ "_" ++ integer_to_list(UniqueId)).
+
+
+ucd_fun_replace_name(ucd_special_casing, lower) -> ucd_special_casing_lower;
+ucd_fun_replace_name(ucd_special_casing, title) -> ucd_special_casing_title;
+ucd_fun_replace_name(ucd_special_casing, upper) -> ucd_special_casing_upper.
+
+
+ucd_fun_new_ast(_, Name, [Arg, _]) ->
+    ?Q("'@Name@'(_@Arg)").
+
+
+ucd_fun_args(ucd_is_category, [_, V], File) ->
+    Values = ucd_fun_atom_list_arg(ucd_is_category, 2, V, File),
+    ucd_fun_validate_arg(Values, unicodedata_ucd:categories(), File, V);
+
+ucd_fun_args(ucd_has_property, [_, V], File) ->
+    Value = ucd_fun_atom_arg(ucd_has_property, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:prop_list_types(), File, V);
+
+ucd_fun_args(ucd_name_aliases, [_, V], File) ->
+    Value = ucd_fun_atom_arg(ucd_name_aliases, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:name_aliases_types(), File, V);
+
+ucd_fun_args(ucd_name_alias_lookup, [_, V], File) ->
+    Value = ucd_fun_atom_list_arg(ucd_name_alias_lookup, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:name_aliases_types(), File, V);
+
+ucd_fun_args(ucd_grapheme_break, [_, V], File) ->
+    Value = ucd_fun_atom_list_arg(ucd_grapheme_break, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:grapheme_break_classes(), File, V);
+
+ucd_fun_args(ucd_word_break, [_, V], File) ->
+    Value = ucd_fun_atom_list_arg(ucd_word_break, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:word_break_classes(), File, V);
+
+ucd_fun_args(ucd_sentence_break, [_, V], File) ->
+    Value = ucd_fun_atom_list_arg(ucd_sentence_break, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:sentence_break_classes(), File, V);
+
+ucd_fun_args(ucd_line_break, [_, V], File) ->
+    Value = ucd_fun_atom_list_arg(ucd_line_break, 2, V, File),
+    ucd_fun_validate_arg(Value, unicodedata_ucd:line_break_classes(), File, V);
+
+ucd_fun_args(ucd_special_casing, [_, V], File) ->
+    Value = ucd_fun_atom_arg(ucd_special_casing, 2, V, File),
+    ucd_fun_validate_arg(Value, [upper, lower, title], File, V).
+
+
+ucd_fun_atom_arg(FunName, ArgPos, Arg, File) ->
+    case erl_syntax:type(Arg) of
+        atom -> erl_syntax:atom_value(Arg);
+        _    -> error(File, Arg, "atom expected as argument ~p of ~s function",
+                      [ArgPos, FunName])
     end.
 
 
-collect_ucd_funs_replace({Name, _}=Fun, CP, UcdFuns) ->
-    NewAST = ?Q("'@Name@'(_@CP)"),
-    {NewAST, sets:add_element(Fun, UcdFuns)}.
-
-
-collect_ucd_category_fun(AST, CP, V, UcdFuns, Name, ValuesFun) ->
-    case erl_syntax:type(V) of
-        atom ->
-            collect_ucd_category_fun_1(AST, CP, [erl_syntax:atom_value(V)],
-                                       UcdFuns, Name, ValuesFun);
-        list ->
-            case lists:all(fun (E) -> erl_syntax:type(E) == atom end,
-                           erl_syntax:list_elements(V)) of
+ucd_fun_atom_list_arg(FunName, ArgPos, Arg, File) ->
+    try erl_syntax:concrete(Arg) of
+        V  when is_atom(V) ->
+            [V];
+        Vs when is_list(Vs) ->
+            case lists:all(fun erlang:is_atom/1, Vs) of
                 true ->
-                    collect_ucd_category_fun_1(AST, CP, erl_syntax:concrete(V),
-                                               UcdFuns, Name, ValuesFun);
+                    Vs;
                 false ->
-                    {AST, UcdFuns}
+                    error(File, Arg,
+                          "list of atoms expected as argument ~p of ~s function",
+                          [ArgPos, FunName])
             end;
         _ ->
-            {AST, UcdFuns}
-    end.
-
-collect_ucd_category_fun_1(AST, CP, Values, UcdFuns, Name, ValuesFun) ->
-    case lists:all(fun (C) -> lists:member(C, ValuesFun()) end , Values) of
-        true ->
-            NewName = ucd_fun_name(Name, Values),
-            NewAST = ?Q("'@NewName@'(_@CP)"),
-            {NewAST, sets:add_element({Name, Values}, UcdFuns)};
-        false ->
-            {AST, UcdFuns}
+            error(File, Arg,
+                  "atom or list of atoms expected as argument ~p of ~s function",
+                  [ArgPos, FunName])
+    catch
+        error:badarg ->
+            error(File, Arg, "invalid argument ~p of ~s function",
+                  [ArgPos, FunName])
     end.
 
 
-collect_ucd_property_fun(AST, CP, V, UcdFuns, Name, ValuesFun) ->
-    case erl_syntax:type(V) of
-        atom ->
-            collect_ucd_property_fun_1(AST, CP, erl_syntax:atom_value(V),
-                                       UcdFuns, Name, ValuesFun);
-        _ ->
-            {AST, UcdFuns}
-    end.
+ucd_fun_validate_arg(Values, AllowedValues, File, AST) when is_list(Values) ->
+    ucd_fun_validate_arg_values(Values, AllowedValues, File, AST), Values;
 
-collect_ucd_property_fun_1(AST, CP, Property, UcdFuns, Name, ValuesFun) ->
-    case lists:member(Property, ValuesFun()) of
-        true ->
-            NewName = ucd_fun_name(Name, [Property]),
-            NewAST = ?Q("'@NewName@'(_@CP)"),
-            {NewAST, sets:add_element({Name, Property}, UcdFuns)};
-        false ->
-            {AST, UcdFuns}
+ucd_fun_validate_arg(Value, AllowedValues, File, AST) ->
+    ucd_fun_validate_arg_value(Value, AllowedValues, File, AST), Value.
+
+
+ucd_fun_validate_arg_values([], _, _, _) ->
+    ok;
+
+ucd_fun_validate_arg_values([V|Vs], AllowedValues, File, AST) ->
+    ucd_fun_validate_arg_value(V, AllowedValues, File, AST),
+    ucd_fun_validate_arg_values(Vs, AllowedValues, File, AST).
+
+
+ucd_fun_validate_arg_value(Value, AllowedValues, File, AST) ->
+    case lists:member(Value, AllowedValues) of
+        true  -> ok;
+        false -> error(File, AST, "invalid value ~p", [Value])
     end.
 
 
@@ -229,41 +295,36 @@ forms({ucd_hangul_syllable_type, 1}, State) ->
 forms({ucd_grapheme_break, 1}, State) ->
     {[grapheme_break_fun_ast()], State};
 
-forms({ucd_grapheme_break, Classes}, State) ->
-    Name = ucd_fun_name(ucd_grapheme_break, Classes),
+forms({ucd_grapheme_break, Name, Classes}, State) ->
     {[grapheme_break_classes_fun_ast(Name, Classes)], State};
 
 forms({ucd_word_break, 1}, State) ->
     {[word_break_fun_ast()], State};
 
-forms({ucd_word_break, Classes}, State) ->
-    Name = ucd_fun_name(ucd_word_break, Classes),
+forms({ucd_word_break, Name, Classes}, State) ->
     {[word_break_classes_fun_ast(Name, Classes)], State};
 
 forms({ucd_sentence_break, 1}, State) ->
     {[sentence_break_fun_ast()], State};
 
-forms({ucd_sentence_break, Classes}, State) ->
-    Name = ucd_fun_name(ucd_sentence_break, Classes),
+forms({ucd_sentence_break, Name, Classes}, State) ->
     {[sentence_break_classes_fun_ast(Name, Classes)], State};
 
 forms({ucd_line_break, 1}, State) ->
     {[line_break_fun_ast()], State};
 
-forms({ucd_line_break, Classes}, State) ->
-    Name = ucd_fun_name(ucd_line_break, Classes),
+forms({ucd_line_break, Name, Classes}, State) ->
     {[line_break_classes_fun_ast(Name, Classes)], State};
 
-forms({ucd_is_category, Categories}, State) ->
-    Name = ucd_fun_name(ucd_is_category, Categories),
-    is_category_forms(Name, Categories, State);
+forms({ucd_is_category, Name, Categories}, State0) ->
+    {Data, State1} = ucd_data(State0),
+    {[is_category_fun_ast(Name, Data, Categories)], State1};
 
-forms({ucd_has_property, Property}, State) ->
-    Name = ucd_fun_name(ucd_has_property, [Property]),
-    has_property_forms(Name, Property, State);
+forms({ucd_has_property, Name, Property}, State0) ->
+    {Data, State1} = prop_list_data(State0),
+    {[has_property_fun_ast(Name, Data, Property)], State1};
 
-forms({ucd_name_aliases, Type}, State0) ->
-    Name = ucd_fun_name(ucd_name_aliases, [Type]),
+forms({ucd_name_aliases, Name, Type}, State0) ->
     {Data, State1} = name_aliases_data(State0),
     {[name_aliases_fun_ast(Name, Type, Data)], State1};
 
@@ -291,14 +352,9 @@ forms({ucd_titlecase_mapping, 1}, State0) ->
                           ,ucd_titlecase_mapping_data)
     , State1};
 
-forms({ucd_special_casing_upper, 1}, State) ->
-    ucd_special_casing_forms(upper, State);
-
-forms({ucd_special_casing_lower, 1}, State) ->
-    ucd_special_casing_forms(lower, State);
-
-forms({ucd_special_casing_title, 1}, State) ->
-    ucd_special_casing_forms(title, State);
+forms({ucd_special_casing, Mapping}, State0) ->
+    {Data, State1} = special_casing_data(State0),
+    {special_casing_funs_ast(Data, Mapping), State1};
 
 forms({ucd_nfc_quick_check, 1}, State0) ->
     {Data, State1} = normalization_properties(State0),
@@ -336,8 +392,7 @@ forms({ucd_codepoint_name_lookup, 1}, State0) ->
     {Forms, State2} = name_lookup_funs_ast(ucd_codepoint_name_lookup, Data, State1),
     ensure_name_lookup_helper_funs(Forms, State2);
 
-forms({ucd_name_alias_lookup, Types}, State0) ->
-    Name = ucd_fun_name(ucd_name_alias_lookup, Types),
+forms({ucd_name_alias_lookup, Name, Types}, State0) ->
     {Data, State1} = name_aliases_data(State0),
     Data1 = name_lookup_alias_names(Data, Types),
     {Forms, State2} = name_lookup_funs_ast(Name, Data1, State1),
@@ -386,23 +441,6 @@ ensure_fun(Name, FormsFun, Forms0, #{generated_functions := Funs}=State0) ->
             State1 = State0#{generated_functions := sets:add_element(Name, Funs)},
             {Forms1, State1}
     end.
-
-
-ucd_special_casing_forms(Mapping, State0) ->
-    {Data, State1} = special_casing_data(State0),
-    {special_casing_funs_ast(Data, Mapping), State1}.
-
-
-is_category_forms(Name, Categories, State0) ->
-    {Data, State1} = ucd_data(State0),
-    Forms = [is_category_fun_ast(Name, Data, Categories)],
-    {Forms, State1}.
-
-
-has_property_forms(Name, Property, State0) ->
-    {Data, State1} = prop_list_data(State0),
-    Forms = [has_property_fun_ast(Name, Data, Property)],
-    {Forms, State1}.
 
 
 ucd_data(#{data := undefined}=State) ->
@@ -547,11 +585,6 @@ composition_data({CP,_,_,0,_,[CP1,CP2],_,_,_,_,_}, NonStarters, Exclusions, Acc)
 
 composition_data(_, _, _, Acc) ->
     Acc.
-
-
-ucd_fun_name(Prefix, Parts) ->
-    Suffix = string:join([atom_to_list(P) || P <- Parts], "_"),
-    list_to_atom(atom_to_list(Prefix) ++ "_" ++ Suffix).
 
 
 index_fun_ast(Name, Ranges) ->
@@ -1364,6 +1397,21 @@ compact_ranges([H|T], [{Cp1, Cp2}=Range | Acc]) ->
 
 range_values(Data) ->
     [case V of {{F,T},R} -> {F,T,R}; {Cp, R} -> {Cp, Cp, R} end || V <- Data].
+
+
+get_file([]) ->
+    "undefined";
+
+get_file([Form | Forms]) ->
+    case Form of
+        ?Q("-file(\"'@File\",9090).") -> erl_syntax:string_value(File);
+        _                             -> get_file(Forms)
+    end.
+
+
+error(File, Form, Fmt, Args) ->
+    Ln = erl_syntax:get_pos(Form),
+    throw({error, [{File, [{Ln, ?MODULE, {Fmt, Args}}]}], []}).
 
 
 -ifdef(TEST).
