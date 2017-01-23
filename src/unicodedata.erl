@@ -1,5 +1,4 @@
 -module(unicodedata).
--compile({parse_transform, unicodedata_ucd_transform}).
 -export([ category/1
         , is_cased_letter/1
         , is_letter/1
@@ -13,6 +12,7 @@
         , is_reserved/1
         , numeric/1
         , numeric_value/2
+        , east_asian_width/1
         , to_uppercase/1
         , to_uppercase/2
         , to_lowercase/1
@@ -21,142 +21,95 @@
         , to_titlecase/2
         , to_casefold/1
         , to_nfkc_casefold/1
-        , east_asian_width/1
         ]).
 
--type category() :: uppercase_letter
-                  | lowercase_letter
-                  | titlecase_letter
-
-                  | modifier_letter
-                  | other_letter
-
-                  | monospacing_mark
-                  | spacing_mark
-                  | enclosing_mark
-
-                  | decimal_number
-                  | letter_number
-                  | other_number
-
-                  | connector_punctuation
-                  | dash_punctuation
-                  | open_punctuation
-                  | close_punctuation
-                  | initial_punctuation
-                  | final_punctuation
-                  | other_punctuation
-
-                  | math_symbol
-                  | currency_symbol
-                  | modifier_symbol
-                  | other_symbol
-
-                  | space_separator
-                  | line_separator
-                  | paragraph_separator
-
-                  | control
-                  | format
-                  | surrogate
-                  | private_use
-                  | unassigned.
-
-
--type east_asian_width() :: ambiguous
-                          | full_width
-                          | half_width
-                          | neutral
-                          | narrow
-                          | wide.
-
--export_type([ category/0
-             , east_asian_width/0
-             ]).
+-type category() :: unicodedata_properties:category().
+-type numeric() :: unicodedata_properties:numeric().
+-type east_asian_width() :: unicodedata_properties:east_asian_width().
 
 
 -spec category(char()) -> category().
-category(CP) -> ucd_category(CP).
+category(CP) -> unicodedata_properties:category(CP).
 
 
 -spec is_cased_letter(char()) -> boolean().
 is_cased_letter(CP) ->
-    lists:member(ucd_category(CP), [ uppercase_letter
-                                   , lowercase_letter
-                                   , titlecase_letter
-                                   ]).
+    lists:member(category(CP), [ uppercase_letter
+                               , lowercase_letter
+                               , titlecase_letter
+                               ]).
 
 
 -spec is_letter(char()) -> boolean().
 is_letter(CP) ->
-    lists:member(ucd_category(CP), [ uppercase_letter
-                                   , lowercase_letter
-                                   , titlecase_letter
-                                   , modifier_letter
-                                   , other_letter
-                                   ]).
+    lists:member(category(CP), [ uppercase_letter
+                               , lowercase_letter
+                               , titlecase_letter
+                               , modifier_letter
+                               , other_letter
+                               ]).
 
 
 -spec is_mark(char()) -> boolean().
 is_mark(CP) ->
-    lists:member(ucd_category(CP), [ monospacing_mark
-                                   , spacing_mark
-                                   , enclosing_mark
-                                   ]).
+    lists:member(category(CP), [ monospacing_mark
+                               , spacing_mark
+                               , enclosing_mark
+                               ]).
 
 
 -spec is_number(char()) -> boolean().
 is_number(CP) ->
-    lists:member(ucd_category(CP), [ decimal_number
-                                   , letter_number
-                                   , other_number
-                                   ]).
+    lists:member(category(CP), [ decimal_number
+                               , letter_number
+                               , other_number
+                               ]).
 
 
 -spec is_punctuation(char()) -> boolean().
 is_punctuation(CP) ->
-    lists:member(ucd_category(CP), [ connector_punctuation
-                                   , dash_punctuation
-                                   , open_punctuation
-                                   , close_punctuation
-                                   , initial_punctuation
-                                   , final_punctuation
-                                   , other_punctuation
-                                   ]).
+    lists:member(category(CP), [ connector_punctuation
+                               , dash_punctuation
+                               , open_punctuation
+                               , close_punctuation
+                               , initial_punctuation
+                               , final_punctuation
+                               , other_punctuation
+                               ]).
 
 
 -spec is_symbol(char()) -> boolean().
 is_symbol(CP) ->
-    lists:member(ucd_category(CP), [ math_symbol
-                                   , currency_symbol
-                                   , modifier_symbol
-                                   , other_symbol
-                                   ]).
+    lists:member(category(CP), [ math_symbol
+                               , currency_symbol
+                               , modifier_symbol
+                               , other_symbol
+                               ]).
 
 
 -spec is_separator(char()) -> boolean().
 is_separator(CP) ->
-    lists:member(ucd_category(CP), [ space_separator
-                                   , line_separator
-                                   , paragraph_separator
-                                   ]).
+    lists:member(category(CP), [ space_separator
+                               , line_separator
+                               , paragraph_separator
+                               ]).
 
 
 -spec is_other( char()) -> boolean().
 is_other(CP) ->
-    lists:member(ucd_category(CP), [ control
-                                   , format
-                                   , surrogate
-                                   , private_use
-                                   , unassigned
-                                   ]).
+    lists:member(category(CP), [ control
+                               , format
+                               , surrogate
+                               , private_use
+                               , unassigned
+                               ]).
 
 
 -spec is_noncharacter( char()) -> boolean().
 is_noncharacter(CP) ->
-    case ucd_category(CP) of
-        unassigned
-          when CP >= 16#FDD0, CP =< 16#FDEF -> true;
+    case category(CP) of
+        unassigned when CP >= 16#FDD0, CP =< 16#FDEF ->
+            true;
         unassigned ->
             V = CP band 16#FFFF, V == 16#FFFE orelse V == 16#FFFF;
         _ ->
@@ -166,32 +119,25 @@ is_noncharacter(CP) ->
 
 -spec is_reserved( char()) -> boolean().
 is_reserved(CP) ->
-    case ucd_category(CP) of
+    case category(CP) of
         unassigned -> not is_noncharacter(CP);
         _          -> false
     end.
 
 
 -spec numeric(char()) -> {Type, Value} | not_a_number
-      when Type :: numeric | digit | decimal
-                 | k_accounting_numeric | k_other_numeric | k_primary_numeric,
+      when Type :: numeric(),
            Value :: integer() | {integer(), pos_integer()}.
-
-numeric(CP) ->
-    case ucd_numeric(CP) of
-        undefined -> not_a_number;
-        Value     -> Value
-    end.
+numeric(CP) -> unicodedata_properties:numeric(CP).
 
 
 -spec numeric_value(char(), Default) -> number() | Default
       when Default :: number() | not_a_number.
-numeric_value(CP, Default) ->
-    case ucd_numeric(CP) of
-        undefined     -> Default;
-        {_, {V1, V2}} -> V1 / V2;
-        {_, V}        -> V
-    end.
+numeric_value(CP, Default) -> unicodedata_properties:numeric_value(CP, Default).
+
+
+-spec east_asian_width(char()) -> east_asian_width().
+east_asian_width(CP) -> unicodedata_properties:east_asian_width(CP).
 
 
 -spec to_uppercase(string()) -> string().
@@ -245,11 +191,6 @@ to_nfkc_casefold(String) ->
     unicodedata_normalization:normalize(nfc, NfkcCasefold).
 
 
--spec east_asian_width(char()) -> east_asian_width().
-east_asian_width(CP) ->
-    ucd_east_asian_width(CP).
-
-
 insert(V, Chars) when is_list(V) -> insert_1(V, Chars);
 insert(V, Chars)                 ->  [V | Chars].
 
@@ -262,40 +203,7 @@ insert_1([C | Cs], Chars) -> insert_1(Cs, [C | Chars]).
 -include_lib("eunit/include/eunit.hrl").
 
 category_test_() -> [
-    ?_assertMatch(lowercase_letter,      category($a))
-   ,?_assertMatch(uppercase_letter,      category($A))
-   ,?_assertMatch(titlecase_letter,      category(16#01c5))
-   ,?_assertMatch(modifier_letter,       category(16#02b0))
-   ,?_assertMatch(other_letter,          category(16#00aa))
-   ,?_assertMatch(monospacing_mark,      category(16#0300))
-   ,?_assertMatch(spacing_mark,          category(16#0903))
-   ,?_assertMatch(enclosing_mark,        category(16#1abe))
-   ,?_assertMatch(decimal_number,        category($0))
-   ,?_assertMatch(letter_number,         category(16#16ee))
-   ,?_assertMatch(other_number,          category(16#00b2))
-   ,?_assertMatch(connector_punctuation, category(16#203f))
-   ,?_assertMatch(dash_punctuation,      category($-))
-   ,?_assertMatch(open_punctuation,      category($[))
-   ,?_assertMatch(close_punctuation,     category($]))
-   ,?_assertMatch(initial_punctuation,   category($«))
-   ,?_assertMatch(final_punctuation,     category($»))
-   ,?_assertMatch(other_punctuation,     category($!))
-   ,?_assertMatch(math_symbol,           category($+))
-   ,?_assertMatch(currency_symbol,       category($$))
-   ,?_assertMatch(modifier_symbol,       category($^))
-   ,?_assertMatch(other_symbol,          category($¦))
-   ,?_assertMatch(space_separator,       category($\s))
-   ,?_assertMatch(line_separator,        category(16#2028))
-   ,?_assertMatch(paragraph_separator,   category(16#2029))
-   ,?_assertMatch(control,               category($\n))
-   ,?_assertMatch(format,                category(16#00ad))
-   ,?_assertMatch(surrogate,             category(16#d800))
-   ,?_assertMatch(surrogate,             category(16#db80))
-   ,?_assertMatch(surrogate,             category(16#dc00))
-   ,?_assertMatch(private_use,           category(16#e000))
-
-
-   ,?_assert(is_cased_letter($a))
+    ?_assert(is_cased_letter($a))
    ,?_assert(is_cased_letter($A))
    ,?_assert(is_cased_letter(16#01c5))
    ,?_assert(not is_cased_letter(16#02b0))
@@ -350,65 +258,6 @@ category_test_() -> [
    ,?_assert(is_noncharacter(16#10FFFF))
 
    ,?_assert(is_reserved(16#E00FF))
-].
-
-numeric_test_() -> [
-    ?_assertEqual({decimal, 9},      numeric(16#0f29))
-   ,?_assertEqual({numeric, {1,2}},  numeric(16#0f2a))
-   ,?_assertEqual({numeric, {17,2}}, numeric(16#0f32))
-   ,?_assertEqual({numeric, {-1,2}}, numeric(16#0f33))
-   ,?_assertEqual({decimal, 0},      numeric(16#1040))
-   ,?_assertEqual({digit, 0},        numeric(16#2070))
-
-   ,?_assertEqual({k_other_numeric, 5},              numeric(16#3405))
-   ,?_assertEqual({k_primary_numeric, 10000},        numeric(16#4e07))
-   ,?_assertEqual({k_accounting_numeric, 1000},      numeric(16#4edf))
-   ,?_assertEqual({k_primary_numeric, 1000000000000},numeric(16#5146))
-   ,?_assertEqual({k_primary_numeric, 100},          numeric(16#767e))
-   ,?_assertEqual({k_accounting_numeric, 10000},     numeric(16#842c))
-   ,?_assertEqual({k_other_numeric, 30},             numeric(16#20983))
-   ,?_assertEqual({k_other_numeric, 40},             numeric(16#2098c))
-   ,?_assertEqual({k_other_numeric, 4},              numeric(16#2626d))
-
-   ,?_assertEqual(not_a_number, numeric($a))
-
-   ,?_assertEqual(0,            numeric_value($a, 0))
-   ,?_assertEqual(not_a_number, numeric_value($a, not_a_number))
-
-   ,?_assertEqual(9,   numeric_value(16#0f29, 0))
-   ,?_assertEqual(0.5, numeric_value(16#0f2a, 0))
-   ,?_assertEqual(8.5, numeric_value(16#0f32, 0))
-   ,?_assertEqual(-0.5,numeric_value(16#0f33, 0))
-   ,?_assertEqual(0,   numeric_value(16#1040, -1))
-   ,?_assertEqual(0,   numeric_value(16#2070, -1))
-
-   ,?_assertEqual(1000000000000,     numeric_value(16#5146, 0))
-].
-
-east_asian_width_test_() -> [
-    ?_assertMatch(neutral,   east_asian_width(16#0000))
-   ,?_assertMatch(narrow,    east_asian_width(16#0020))
-   ,?_assertMatch(neutral,   east_asian_width(16#007f))
-   ,?_assertMatch(ambiguous, east_asian_width(16#00a1))
-   ,?_assertMatch(narrow,    east_asian_width(16#00a2))
-   ,?_assertMatch(neutral,   east_asian_width(16#2011))
-   ,?_assertMatch(ambiguous, east_asian_width(16#2013))
-   ,?_assertMatch(half_width,east_asian_width(16#20a9))
-   ,?_assertMatch(ambiguous, east_asian_width(16#25e2))
-   ,?_assertMatch(neutral,   east_asian_width(16#25e6))
-   ,?_assertMatch(wide,      east_asian_width(16#2e80))
-   ,?_assertMatch(wide,      east_asian_width(16#a4c6))
-   ,?_assertMatch(neutral,   east_asian_width(16#a4d0))
-   ,?_assertMatch(wide,      east_asian_width(16#ac00))
-   ,?_assertMatch(wide,      east_asian_width(16#d7a3))
-   ,?_assertMatch(full_width,east_asian_width(16#ff01))
-   ,?_assertMatch(half_width,east_asian_width(16#ff61))
-   ,?_assertMatch(neutral,   east_asian_width(16#fff9))
-   ,?_assertMatch(neutral,   east_asian_width(16#1f890))
-   ,?_assertMatch(wide,      east_asian_width(16#1f9C0))
-   ,?_assertMatch(wide,      east_asian_width(16#20000))
-   ,?_assertMatch(neutral,   east_asian_width(16#e0001))
-   ,?_assertMatch(ambiguous, east_asian_width(16#e0100))
 ].
 
 to_titlecase_test_() -> [
