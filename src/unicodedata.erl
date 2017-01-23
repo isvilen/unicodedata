@@ -10,9 +10,19 @@
         , is_other/1
         , is_noncharacter/1
         , is_reserved/1
+        , bidirectional_class/1
+        , is_bidirectional_strong/1
+        , is_bidirectional_weak/1
+        , is_bidirectional_neutral/1
+        , is_bidirectional_explicit/1
+        , is_mirrored/1
+        , mirroring_glyph/1
         , numeric/1
         , numeric_value/2
         , east_asian_width/1
+        , name/1
+        , name/2
+        , lookup/1
         , to_uppercase/1
         , to_uppercase/2
         , to_lowercase/1
@@ -21,9 +31,24 @@
         , to_titlecase/2
         , to_casefold/1
         , to_nfkc_casefold/1
+        , match/2
+        , match/3
+        , to_nfc/1
+        , to_nfkc/1
+        , to_nfd/1
+        , to_nfkd/1
+        , graphemes/1
+        , graphemes/3
+        , words/1
+        , words/3
+        , sentences/1
+        , sentences/3
+        , lines/1
+        , lines/3
         ]).
 
 -type category() :: unicodedata_properties:category().
+-type bidirectional_class() :: unicodedata_bidirectional:bidirectional_class().
 -type numeric() :: unicodedata_properties:numeric().
 -type east_asian_width() :: unicodedata_properties:east_asian_width().
 
@@ -95,7 +120,7 @@ is_separator(CP) ->
                                ]).
 
 
--spec is_other( char()) -> boolean().
+-spec is_other(char()) -> boolean().
 is_other(CP) ->
     lists:member(category(CP), [ control
                                , format
@@ -105,7 +130,7 @@ is_other(CP) ->
                                ]).
 
 
--spec is_noncharacter( char()) -> boolean().
+-spec is_noncharacter(char()) -> boolean().
 is_noncharacter(CP) ->
     case category(CP) of
         unassigned when CP >= 16#FDD0, CP =< 16#FDEF ->
@@ -117,12 +142,70 @@ is_noncharacter(CP) ->
     end.
 
 
--spec is_reserved( char()) -> boolean().
+-spec is_reserved(char()) -> boolean().
 is_reserved(CP) ->
     case category(CP) of
         unassigned -> not is_noncharacter(CP);
         _          -> false
     end.
+
+
+-spec bidirectional_class(char()) -> bidirectional_class().
+bidirectional_class(CP) ->
+    unicodedata_bidirectional:bidirectional_class(CP).
+
+
+-spec is_bidirectional_strong(char()) -> boolean().
+is_bidirectional_strong(CP) ->
+    lists:member(bidirectional_class(CP), [ left_to_right
+                                          , right_to_left
+                                          , arabic_letter
+                                          ]).
+
+
+-spec is_bidirectional_weak(char()) -> boolean().
+is_bidirectional_weak(CP) ->
+    lists:member(bidirectional_class(CP), [ european_number
+                                          , european_separator
+                                          , european_terminator
+                                          , arabic_number
+                                          , common_separator
+                                          , nonspacing_mark
+                                          , boundary_neutral
+                                          ]).
+
+
+-spec is_bidirectional_neutral(char()) -> boolean().
+is_bidirectional_neutral(CP) ->
+    lists:member(bidirectional_class(CP), [ paragraph_separator
+                                          , segment_separator
+                                          , white_space
+                                          , other_neutral
+                                          ]).
+
+
+-spec is_bidirectional_explicit(char()) -> boolean().
+is_bidirectional_explicit(CP) ->
+    lists:member(bidirectional_class(CP), [ left_to_right_embedding
+                                          , left_to_right_override
+                                          , right_to_left_embedding
+                                          , right_to_left_override
+                                          , pop_directional_format
+                                          , left_to_right_isolate
+                                          , right_to_left_isolate
+                                          , first_strong_isolate
+                                          , pop_directional_isolate
+                                          ]).
+
+
+-spec is_mirrored(char()) -> boolean().
+is_mirrored(CP) ->
+    unicodedata_bidirectional:is_mirrored(CP).
+
+
+-spec mirroring_glyph(char()) -> char() | none.
+mirroring_glyph(CP) ->
+    unicodedata_bidirectional:mirroring_glyph(CP).
 
 
 -spec numeric(char()) -> {Type, Value} | not_a_number
@@ -138,6 +221,19 @@ numeric_value(CP, Default) -> unicodedata_properties:numeric_value(CP, Default).
 
 -spec east_asian_width(char()) -> east_asian_width().
 east_asian_width(CP) -> unicodedata_properties:east_asian_width(CP).
+
+
+-spec name(char()) -> binary().
+name(CP) -> unicodedata_name:codepoint_name(CP).
+
+-spec name(char(), standard | display) -> binary().
+name(CP, standard) -> unicodedata_name:codepoint_name(CP);
+name(CP, display)  -> unicodedata_name:codepoint_display_name(CP);
+name(_, _)         -> error(badarg).
+
+
+-spec lookup(Name :: binary()) -> char() | not_found.
+lookup(Name) -> unicodedata_name:codepoint_lookup(Name).
 
 
 -spec to_uppercase(string()) -> string().
@@ -196,6 +292,120 @@ insert(V, Chars)                 ->  [V | Chars].
 
 insert_1([], Chars)       -> Chars;
 insert_1([C | Cs], Chars) -> insert_1(Cs, [C | Chars]).
+
+
+-spec match(string(), string()) -> boolean().
+match(String1, String2) ->
+    match(String1, String2, default).
+
+
+-spec match(string(), string(), Mode) -> boolean()
+      when Mode :: default | canonical | compatibility | identifier.
+match(String1, String2, default) ->
+    to_casefold(String1) == to_casefold(String2);
+
+match(String1, String2, canonical) ->
+    to_nfd(to_casefold(to_nfd(String1))) == to_nfd(to_casefold(to_nfd(String2)));
+
+match(String1, String2, compatibility) ->
+       to_nfkd(to_casefold(to_nfkd(to_casefold(to_nfd(String1)))))
+    == to_nfkd(to_casefold(to_nfkd(to_casefold(to_nfd(String2)))));
+
+match(String1, String2, identifier) ->
+    to_nfkc_casefold(to_nfd(String1)) == to_nfkc_casefold(to_nfd(String2));
+
+match(_, _, _) ->
+    error:badarg().
+
+
+-spec to_nfc(string()) -> string().
+to_nfc(String) -> unicodedata_normalization:normalize(nfc, String).
+
+-spec to_nfkc(string()) -> string().
+to_nfkc(String) -> unicodedata_normalization:normalize(nfkc, String).
+
+-spec to_nfd(string()) -> string().
+to_nfd(String) -> unicodedata_normalization:normalize(nfd, String).
+
+-spec to_nfkd(string()) -> string().
+to_nfkd(String) -> unicodedata_normalization:normalize(nfkd, String).
+
+
+-spec graphemes(string()) -> [string()].
+graphemes(String) ->
+    lists:reverse(graphemes(fun add_segment/2, [], String)).
+
+-spec graphemes(Fun, Acc0, string()) -> Acc1
+      when Fun :: fun((Grapheme, AccIn) -> AccOut),
+           Grapheme :: string(),
+           Acc0 :: term(),
+           Acc1 :: term(),
+           AccIn :: term(),
+           AccOut :: term().
+
+graphemes(Fun, Acc0, String) ->
+    unicodedata_segmentation:grapheme_breaks(fun (break, Acc) -> Acc;
+                                                 (V, Acc)     -> Fun(V, Acc)
+                                             end, Acc0, String).
+
+
+-spec words(string()) -> [string()].
+words(String) ->
+    lists:reverse(words(fun add_segment/2, [], String)).
+
+-spec words(Fun, Acc0, string()) -> Acc1
+      when Fun :: fun((Word, AccIn) -> AccOut),
+           Word :: string(),
+           Acc0 :: term(),
+           Acc1 :: term(),
+           AccIn :: term(),
+           AccOut :: term().
+
+words(Fun, Acc0, String) ->
+    unicodedata_segmentation:word_breaks(fun (break, Acc) -> Acc;
+                                             (V, Acc)     -> Fun(V, Acc)
+                                         end, Acc0, String).
+
+
+-spec sentences(string()) -> [string()].
+sentences(String) ->
+    lists:reverse(sentences(fun add_segment/2, [], String)).
+
+-spec sentences(Fun, Acc0, string()) -> Acc1
+      when Fun :: fun((Word, AccIn) -> AccOut),
+           Word :: string(),
+           Acc0 :: term(),
+           Acc1 :: term(),
+           AccIn :: term(),
+           AccOut :: term().
+
+sentences(Fun, Acc0, String) ->
+    unicodedata_segmentation:sentence_breaks(fun (break, Acc) -> Acc;
+                                                 (V, Acc)     -> Fun(V, Acc)
+                                             end, Acc0, String).
+
+
+
+-spec lines(string()) -> [string()].
+lines(String) ->
+    lists:reverse(lines(fun add_segment/2, [], String)).
+
+-spec lines(Fun, Acc0, string()) -> Acc1
+      when Fun :: fun((Word, AccIn) -> AccOut),
+           Word :: string(),
+           Acc0 :: term(),
+           Acc1 :: term(),
+           AccIn :: term(),
+           AccOut :: term().
+
+lines(Fun, Acc0, String) ->
+    unicodedata_segmentation:line_breaks(fun (break, Acc) -> Acc;
+                                             (V, Acc)     -> Fun(V, Acc)
+                                         end, Acc0, String).
+
+
+add_segment(break, Acc) -> Acc;
+add_segment(V, Acc)     -> [V | Acc].
 
 
 -ifdef(TEST).
@@ -260,6 +470,39 @@ category_test_() -> [
    ,?_assert(is_reserved(16#E00FF))
 ].
 
+bidirectional_class_test_() -> [
+    ?_assert(is_bidirectional_strong($A))
+   ,?_assert(is_bidirectional_strong(16#5be))
+   ,?_assert(is_bidirectional_strong(16#608))
+   ,?_assert(not is_bidirectional_strong($0))
+
+   ,?_assert(is_bidirectional_weak($0))
+   ,?_assert(is_bidirectional_weak($+))
+   ,?_assert(is_bidirectional_weak($#))
+   ,?_assert(is_bidirectional_weak(16#0600))
+   ,?_assert(is_bidirectional_weak($,))
+   ,?_assert(is_bidirectional_weak(16#0300))
+   ,?_assert(is_bidirectional_weak($\b))
+   ,?_assert(not is_bidirectional_weak($a))
+
+   ,?_assert(is_bidirectional_neutral($\r))
+   ,?_assert(is_bidirectional_neutral($\t))
+   ,?_assert(is_bidirectional_neutral($\s))
+   ,?_assert(is_bidirectional_neutral($!))
+   ,?_assert(not is_bidirectional_neutral($,))
+
+   ,?_assert(is_bidirectional_explicit(16#202a))
+   ,?_assert(is_bidirectional_explicit(16#202d))
+   ,?_assert(is_bidirectional_explicit(16#202b))
+   ,?_assert(is_bidirectional_explicit(16#202e))
+   ,?_assert(is_bidirectional_explicit(16#202c))
+   ,?_assert(is_bidirectional_explicit(16#2066))
+   ,?_assert(is_bidirectional_explicit(16#2067))
+   ,?_assert(is_bidirectional_explicit(16#2068))
+   ,?_assert(is_bidirectional_explicit(16#2069))
+   ,?_assert(not is_bidirectional_explicit($A))
+].
+
 to_titlecase_test_() -> [
     ?_assertEqual(" Abc Efg Ijh ", to_titlecase(" ABc eFG IjH "))
 ].
@@ -271,6 +514,21 @@ to_casefold_test_() -> [
 
 to_nfkc_casefold_test_() -> [
     ?_assertEqual("fax", to_nfkc_casefold([16#200B, 16#213B]))
+].
+
+match_test_() -> [
+    ?_assert(match("Σίσυφος", "ΣΊΣΥΦΟΣ"))
+   ,?_assert(match("BUSSE", "Buße"))
+].
+
+segmentation_test_() -> [
+    ?_assertEqual([[$a, 16#308], [$b]], graphemes([$a, 16#308, $b]))
+
+   ,?_assertEqual(["ab", " ", "cd", "\n", "ef"], words("ab cd\nef"))
+
+   ,?_assertEqual(["Ab. ", "Cd\nef"], sentences("Ab. Cd\nef"))
+
+   ,?_assertEqual(["a\r\n", "b\n", "c"], lines("a\r\nb\nc"))
 ].
 
 -endif.
