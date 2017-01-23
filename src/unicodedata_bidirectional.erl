@@ -119,13 +119,13 @@ bracket(CP) ->
 -type array(T) :: array:array(T).
 -type index() :: non_neg_integer().
 
--record(paragraph,{ embedding_level
-                  , codepoints :: array(char())
+-record(paragraph,{ embedding_level :: non_neg_integer() | undefined
+                  , codepoints :: array(char()) | undefined
                   , initial_types :: array(bidirectional_class())
                   , result_types :: array(bidirectional_class())
-                  , matching_pdi :: array(undefined | index())
-                  , matching_isolate_initiator :: array(undefined | index())
-                  , levels :: array(non_neg_integer() | hide)
+                  , matching_pdi :: array(undefined | index()) | undefined
+                  , matching_isolate_initiator :: array(undefined | index()) | undefined
+                  , levels :: array(non_neg_integer() | hide) | undefined
                   }).
 
 -opaque paragraph() :: #paragraph{embedding_level :: non_neg_integer()}.
@@ -516,8 +516,8 @@ uba_ds_set_type(Idx, Type, #uba_ds{paragraph=P0}=S) ->
                 , types :: array(bidirectional_class())
                 , resolved_levels :: array(non_neg_integer())
                 , level :: non_neg_integer()
-                , sos :: non_neg_integer()
-                , eos :: non_neg_integer()
+                , sos :: bidirectional_class()
+                , eos :: bidirectional_class()
                 }).
 
 %% definition BD13
@@ -1550,29 +1550,27 @@ determine_explicit_embedding_levels_test_() -> [
 -undef(PARAGRAPH).
 
 
--define(LEVELS(L),array:from_list([case V of x -> hide; _ -> V end || V <- L])).
-
 multiline_reordering_test_() -> [
      ?_assertMatch([1,0,2,4,3,5,6],
-                   multiline_reordering(?LEVELS([1,1,0,1,1,0,0]), 0, [7]))
+                   multiline_reordering(lv([1,1,0,1,1,0,0]), 0, [7]))
 
     ,?_assertMatch([12,13,11,10,9,7,8,6,5,4,3,2,1,0],
-                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [14]))
+                   multiline_reordering(lv([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [14]))
 
     ,?_assertMatch([6,5,4,3,2,1,0,
                    12,13,11,10,9,7,8],
-                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [7,14]))
+                   multiline_reordering(lv([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [7,14]))
 
     ,?_assertMatch([11,9,7,6,5,3,1],
-                   multiline_reordering(?LEVELS([x,1,x,2,x,1,2,1,x,2,x,1,x]), 0, [13]))
+                   multiline_reordering(lv([x,1,x,2,x,1,2,1,x,2,x,1,x]), 0, [13]))
 
     ,?_assertMatch([6,5,4,2,9,10],
-                   multiline_reordering(?LEVELS([x,x,3,x,3,3,3,x,x,2,2,x]), 0, [12]))
+                   multiline_reordering(lv([x,x,3,x,3,3,3,x,x,2,2,x]), 0, [12]))
 
     ,?_assertMatch([8,9,10,11,5,4,2],
-                   multiline_reordering(?LEVELS([x,x,4,x,3,3,x,x,4,4,4,4]), 1, [12]))
+                   multiline_reordering(lv([x,x,4,x,3,3,x,x,4,4,4,4]), 1, [12]))
 ].
 
--undef(LEVELS).
+lv(L) -> array:from_list([case V of x -> hide; _ -> V end || V <- L]).
 
 -endif.

@@ -1290,9 +1290,6 @@ lb_match_prefix_1([{some, _, _} | M], P) ->
 lb_match_prefix_1([{some, _} | M], P) ->
     lb_match_prefix_1(M, P);
 
-lb_match_prefix_1([{optional, C} | Ms], [C|Cs])  ->
-    lb_match_prefix_1(Ms, Cs);
-
 lb_match_prefix_1([{optional, Ms} | Ms1], [C|Cs]=Cs1) when is_list(Ms) ->
     case lists:member(C, Ms) of
         true  -> lb_match_prefix_1(Ms1, Cs);
@@ -1325,11 +1322,7 @@ lb_match_suffix([], _) ->
     true;
 
 
-lb_match_suffix([{optional, C} | Ms], #lb_state{next=C}=State) ->
-    lb_match_suffix(Ms, lb_advance(State));
-
-lb_match_suffix([{optional, Cs} | Ms], #lb_state{next=N}=State)
-  when is_list(Cs) ->
+lb_match_suffix([{optional, Cs} | Ms], #lb_state{next=N}=State) ->
     case lists:member(N, Cs) of
         true  -> lb_match_suffix(Ms, lb_advance(State));
         false -> lb_match_suffix(Ms, State)
@@ -1338,15 +1331,8 @@ lb_match_suffix([{optional, Cs} | Ms], #lb_state{next=N}=State)
 lb_match_suffix([{optional, _} | Ms], State) ->
     lb_match_suffix(Ms, State);
 
-
 lb_match_suffix([C | Ms], #lb_state{next=C}=State) ->
     lb_match_suffix(Ms, lb_advance(State));
-
-lb_match_suffix([Cs | Ms], #lb_state{next=N}=State) when is_list(Cs) ->
-    case lists:member(N, Cs) of
-        true  -> lb_match_suffix(Ms, lb_advance(State));
-        false -> false
-    end;
 
 lb_match_suffix(_, _) ->
     false.
