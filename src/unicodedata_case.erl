@@ -8,6 +8,8 @@
         , to_uppercase/2
         , to_lowercase/1
         , to_lowercase/2
+        , to_titlecase/1
+        , to_titlecase/2
         ]).
 
 
@@ -52,6 +54,33 @@ to_lowercase(String, Lang) ->
     convert_case(String, fun lowercase_mapping/4, Lang).
 
 
+-spec to_titlecase(string()) -> string().
+to_titlecase(String) ->
+    to_titlecase(String, undefined, [], []).
+
+
+-spec to_titlecase(string(), Lang :: binary()) -> string().
+to_titlecase(String, Lang) ->
+    to_titlecase(String, Lang, [], []).
+
+
+to_titlecase([], _, _, Acc) ->
+    lists:reverse(Acc);
+
+to_titlecase([CP|CPs], Lang, Prefix, Acc0) ->
+    Prefix1 = [CP | Prefix],
+    case is_cased(CP) of
+        true ->
+            Acc1 = case titlecase_mapping(CP, Prefix, CPs, Lang) of
+                       Vs when is_list(Vs) -> push(Vs, Acc0);
+                       V                   -> [V | Acc0]
+                   end,
+            convert_case(CPs, fun lowercase_mapping/4, Lang, Prefix1, Acc1);
+        false ->
+            to_titlecase(CPs, Lang, Prefix1, [CP | Acc0])
+    end.
+
+
 uppercase_mapping(CP, Prefix, Suffix, Lang) ->
     case ucd_special_casing(CP, upper) of
         undefined ->
@@ -85,6 +114,25 @@ lowercase_mapping(CP, Prefix, Suffix, Lang) ->
 
 simple_lowercase_mapping(CP) ->
     case ucd_lowercase_mapping(CP) of
+        undefined -> CP;
+        V         -> V
+    end.
+
+
+titlecase_mapping(CP, Prefix, Suffix, Lang) ->
+    case ucd_special_casing(CP, title) of
+        undefined ->
+            simple_titlecase_mapping(CP);
+        Vs ->
+            case special_casing(Prefix, Suffix, Lang, Vs) of
+                undefined -> simple_titlecase_mapping(CP);
+                V         -> V
+            end
+    end.
+
+
+simple_titlecase_mapping(CP) ->
+    case ucd_titlecase_mapping(CP) of
         undefined -> CP;
         V         -> V
     end.
@@ -306,6 +354,14 @@ to_lowercase_test_() -> [
    ,?_assertEqual([$a, 16#03C2],         to_lowercase([$a, 16#03A3]))
    ,?_assertEqual([$a, $., 16#03C2, $.], to_lowercase([$a, $., 16#03A3, $.]))
    ,?_assertEqual([$a, 16#03C3, $., $a], to_lowercase([$a, 16#03A3, $., $a]))
+].
+
+to_titlecase_test_() -> [
+    ?_assertEqual(" Abcd ", to_titlecase(" aBcD "))
+
+   ,?_assertEqual([$F, $f, $ﬀ], to_titlecase([$ﬀ, $ﬀ]))
+
+   ,?_assertEqual([$F, $i, $a], to_titlecase([$ﬁ, $a]))
 ].
 
 -endif.

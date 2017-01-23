@@ -14,7 +14,11 @@
         , numeric/1
         , numeric_value/2
         , to_uppercase/1
+        , to_uppercase/2
         , to_lowercase/1
+        , to_lowercase/2
+        , to_titlecase/1
+        , to_titlecase/2
         , east_asian_width/1
         ]).
 
@@ -193,9 +197,37 @@ to_uppercase(String) ->
     unicodedata_case:to_uppercase(String).
 
 
+-spec to_uppercase(string(), Lang :: binary()) -> string().
+to_uppercase(String, Lang) ->
+    unicodedata_case:to_uppercase(String, Lang).
+
+
 -spec to_lowercase(string()) -> string().
 to_lowercase(String) ->
     unicodedata_case:to_lowercase(String).
+
+
+-spec to_lowercase(string(), Lang :: binary()) -> string().
+to_lowercase(String, Lang) ->
+    unicodedata_case:to_lowercase(String, Lang).
+
+
+-spec to_titlecase(string()) -> string().
+to_titlecase(String) ->
+    do_titlecase(String, undefined).
+
+
+-spec to_titlecase(string(), Lang :: binary()) -> string().
+to_titlecase(String, Lang) ->
+    do_titlecase(String, Lang).
+
+
+do_titlecase(String, Lang) ->
+    Fun = fun (break, AccIn) -> AccIn;
+              (W, AccIn)     -> [unicodedata_case:to_titlecase(W, Lang) | AccIn]
+          end,
+    Ws = unicodedata_segmentation:word_breaks(Fun, [], String),
+    lists:flatten(lists:reverse(Ws)).
 
 
 -spec east_asian_width(char()) -> east_asian_width().
@@ -355,6 +387,10 @@ east_asian_width_test_() -> [
    ,?_assertMatch(wide,      east_asian_width(16#20000))
    ,?_assertMatch(neutral,   east_asian_width(16#e0001))
    ,?_assertMatch(ambiguous, east_asian_width(16#e0100))
+].
+
+to_titlecase_test_() -> [
+    ?_assertEqual(" Abc Efg Ijh ", to_titlecase(" ABc eFG IjH "))
 ].
 
 -endif.
