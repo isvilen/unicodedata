@@ -19,6 +19,8 @@
         , to_lowercase/2
         , to_titlecase/1
         , to_titlecase/2
+        , to_casefold/1
+        , to_nfkc_casefold/1
         , east_asian_width/1
         ]).
 
@@ -230,9 +232,29 @@ do_titlecase(String, Lang) ->
     lists:flatten(lists:reverse(Ws)).
 
 
+-spec to_casefold(string()) -> string().
+to_casefold(String) ->
+    Fun = fun (CP, Acc) -> insert(unicodedata_case:case_folding(CP), Acc) end,
+    lists:reverse(lists:foldl(Fun, [], String)).
+
+
+-spec to_nfkc_casefold(string()) -> string().
+to_nfkc_casefold(String) ->
+    Fun = fun (CP, Acc) -> insert(unicodedata_case:nfkc_casefold(CP), Acc) end,
+    NfkcCasefold = lists:reverse(lists:foldl(Fun, [], String)),
+    unicodedata_normalization:normalize(nfc, NfkcCasefold).
+
+
 -spec east_asian_width(char()) -> east_asian_width().
 east_asian_width(CP) ->
     ucd_east_asian_width(CP).
+
+
+insert(V, Chars) when is_list(V) -> insert_1(V, Chars);
+insert(V, Chars)                 ->  [V | Chars].
+
+insert_1([], Chars)       -> Chars;
+insert_1([C | Cs], Chars) -> insert_1(Cs, [C | Chars]).
 
 
 -ifdef(TEST).
@@ -391,6 +413,15 @@ east_asian_width_test_() -> [
 
 to_titlecase_test_() -> [
     ?_assertEqual(" Abc Efg Ijh ", to_titlecase(" ABc eFG IjH "))
+].
+
+to_casefold_test_() -> [
+    ?_assertEqual([16#3C5, 16#313, 16#300, $a, 16#FB],
+                  to_casefold([16#1F52, $a, 16#DB]))
+].
+
+to_nfkc_casefold_test_() -> [
+    ?_assertEqual("fax", to_nfkc_casefold([16#200B, 16#213B]))
 ].
 
 -endif.

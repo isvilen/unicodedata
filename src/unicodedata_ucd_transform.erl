@@ -395,6 +395,13 @@ forms({ucd_special_casing, Mapping}, State0) ->
     {Data, State1} = special_casing_data(State0),
     {special_casing_funs_ast(Data, Mapping), State1};
 
+forms({ucd_case_folding, 1}, State) ->
+    {[case_folding_fun_ast()], State};
+
+forms({ucd_nfkc_casefold, 1}, State0) ->
+    {Data, State1} = normalization_properties(State0),
+    {[nfkc_casefold_fun_ast(Data)], State1};
+
 forms({ucd_nfc_quick_check, 1}, State0) ->
     {Data, State1} = normalization_properties(State0),
     {[nfc_quick_check_fun_ast(Data)], State1};
@@ -1020,6 +1027,17 @@ special_casing_value([LangOrCtx], V) ->
 
 special_casing_value([], V) ->
     V.
+
+
+case_folding_fun_ast() ->
+    Data = [{CP, V} || {CP, T, V} <- unicodedata_ucd:case_folding()
+                                   , T == common orelse T == full],
+    range_fun_ast(ucd_case_folding, range_values(Data), ?Q("undefined")).
+
+
+nfkc_casefold_fun_ast(Data) ->
+    Data1 = [{CP, V} || {CP, nfkc_casefold, V} <- Data],
+    range_fun_ast(ucd_nfkc_casefold, range_values(Data1), ?Q("undefined")).
 
 
 numeric_index_fun_ast(NumericProperties) ->

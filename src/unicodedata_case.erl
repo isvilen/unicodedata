@@ -4,6 +4,8 @@
         , is_uppercase/1
         , is_cased/1
         , is_case_ignorable/1
+        , case_folding/1
+        , nfkc_casefold/1
         , to_uppercase/1
         , to_uppercase/2
         , to_lowercase/1
@@ -32,6 +34,22 @@ is_cased(CP) ->
 is_case_ignorable(CP) ->
     ucd_word_break(CP, [mid_letter, mid_num_let, single_quote])
         orelse ucd_is_category(CP, ['Mn', 'Me', 'Cf', 'Lm', 'Sk']).
+
+
+-spec case_folding(char()) -> char() | string().
+case_folding(CP) ->
+    case ucd_case_folding(CP) of
+        undefined -> CP;
+        V         -> V
+    end.
+
+
+-spec nfkc_casefold(char()) -> char() | string().
+nfkc_casefold(CP) ->
+    case ucd_nfkc_casefold(CP) of
+        undefined -> CP;
+        V         -> V
+    end.
 
 
 -spec to_uppercase(string()) -> string().
