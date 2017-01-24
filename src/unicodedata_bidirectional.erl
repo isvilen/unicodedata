@@ -70,48 +70,51 @@ bracket(CP) ->
 
 
 -type array(T) :: array:array(T).
--type index() :: non_neg_integer().
 
--record(paragraph,{ embedding_level :: non_neg_integer() | undefined
-                  , codepoints :: array(char()) | undefined
-                  , initial_types :: array(bidirectional_class())
-                  , result_types :: array(bidirectional_class())
-                  , matching_pdi :: array(undefined | index()) | undefined
-                  , matching_isolate_initiator :: array(undefined | index()) | undefined
-                  , levels :: array(non_neg_integer() | hide) | undefined
-                  }).
-
--opaque paragraph() :: #paragraph{embedding_level :: non_neg_integer()}.
+-opaque paragraph() :: { array(char()) % codepoints
+                       , array(bidirectional_class()) % types
+                       , non_neg_integer() % paragraph embedding level
+                       , array(non_neg_integer()) % levels
+                       }.
 
 
 -spec paragraph(string()) -> paragraph().
 paragraph(String) ->
-    P0 = create_paragraph(String),
-    P1 = determine_paragraph_embedding_level(P0),
-    paragraph_run_uba(P1).
+    CPs = codepoints(String),
+    Types = initial_types(String),
+    {MPDI, MII} = determine_matching_isolates(Types),
+    Level = determine_paragraph_embedding_level(Types, MPDI),
+    run_uba(CPs, Types, Level, MPDI, MII).
 
 
 -spec paragraph(string(), EmbeddingLevel) -> paragraph()
       when  EmbeddingLevel :: non_neg_integer().
 paragraph(String, EmbeddingLevel) ->
-    P0 = create_paragraph(String),
-    P1 = P0#paragraph{embedding_level = EmbeddingLevel},
-    paragraph_run_uba(P1).
+    CPs = codepoints(String),
+    Types = initial_types(String),
+    {MPDI, MII} = determine_matching_isolates(Types),
+    run_uba(CPs, Types, EmbeddingLevel, MPDI, MII).
 
 
 -spec embedding_level(paragraph()) -> non_neg_integer().
-embedding_level(#paragraph{embedding_level=Level}) -> Level.
+embedding_level({_, _, Level, _}) -> Level.
 
 
 -spec embedding_levels(paragraph()) -> [non_neg_integer() | hide].
-embedding_levels(#paragraph{codepoints=CPs}=Paragraph) ->
-    embedding_levels(Paragraph, [array:size(CPs)]).
+embedding_levels(Paragraph) ->
+    embedding_levels(Paragraph, []).
 
 
--spec embedding_levels(paragraph(), LineBreaks) -> [non_neg_integer() | hide]
-      when LineBreaks :: [non_neg_integer()].
-embedding_levels(Paragraph, LineBreaks) ->
-    array:to_list(get_levels(Paragraph, LineBreaks)).
+-spec embedding_levels(paragraph(), Options) -> [non_neg_integer() | hide]
+      when Options :: [ {line_breaks, [non_neg_integer()]}
+                      | {hide_explicit_directional_formatting, boolean()} ].
+embedding_levels({CPs, Types, ParLevel, Levels}, Options) ->
+    LineBreaks = line_breaks(CPs, Options),
+    Levels1 = get_levels(Levels, Types, ParLevel, LineBreaks),
+    case hide_explicit_directional_formatting(Options) of
+        true  -> hide_levels_for_characters_removed_by_X9(Types, Levels1);
+        false -> array:to_list(Levels1)
+    end.
 
 
 -spec embedding_level_kind(Level) -> left_to_right | right_to_left
@@ -121,43 +124,120 @@ embedding_level_kind(Level) when is_integer(Level) ->
 
 
 -spec reorder_indices(paragraph()) -> [non_neg_integer()].
-reorder_indices(#paragraph{codepoints=CPs}=Paragraph) ->
-    reorder_indices(Paragraph, [array:size(CPs)]).
+reorder_indices(Paragraph) ->
+    reorder_indices(Paragraph, []).
 
 
--spec reorder_indices(paragraph(), LineBreaks) -> [non_neg_integer()]
-      when LineBreaks :: [non_neg_integer()].
-reorder_indices(Paragraph, LineBreaks) ->
-    Levels = get_levels(Paragraph, LineBreaks),
-    EmbeddingLevel = Paragraph#paragraph.embedding_level,
-    multiline_reordering(Levels, EmbeddingLevel, LineBreaks).
+-spec reorder_indices(paragraph(), Options) -> [non_neg_integer()]
+      when Options :: [ {line_breaks, [non_neg_integer()]}
+                      | {hide_explicit_directional_formatting, boolean()} ].
+reorder_indices({CPs, Types, ParLevel, Levels}, Options) ->
+    LineBreaks = line_breaks(CPs, Options),
+    Levels1 = get_levels(Levels, Types, ParLevel, LineBreaks),
+    Indices = multiline_reordering(Levels1, LineBreaks),
+    case hide_explicit_directional_formatting(Options) of
+        true ->
+            [Idx || Idx <- Indices, not is_removed_by_X9(array:get(Idx, Types))];
+        false ->
+            Indices
+    end.
 
 
 -spec reorder(paragraph()) -> string().
-reorder(#paragraph{codepoints=CPs}=Paragraph) ->
-    reorder(Paragraph, [array:size(CPs)]).
+reorder(Paragraph) ->
+    reorder(Paragraph, []).
 
 
--spec reorder(paragraph(), LineBreaks) -> string()
-      when LineBreaks :: [non_neg_integer()].
-reorder(Paragraph, LineBreaks) ->
-    Idxs = reorder_indices(Paragraph, LineBreaks),
-    [array:get(Idx,Paragraph#paragraph.codepoints) || Idx <- Idxs].
+-spec reorder(paragraph(), Options) -> string()
+      when Options :: [ {line_breaks, [non_neg_integer()]}
+                      | {hide_explicit_directional_formatting, boolean()} ].
+reorder(Paragraph, Options) ->
+    CPs = element(1, Paragraph),
+    Indices = reorder_indices(Paragraph, Options),
+    [array:get(Idx,CPs) || Idx <- Indices].
 
 
-create_paragraph(String) ->
-    CPs = array:fix(array:from_list(String)),
-    Types = array:fix(array:from_list([ucd_bidi_class(CP) || CP <- String])),
-    determine_matching_isolates(#paragraph { codepoints = CPs
-                                           , initial_types = Types
-                                           , result_types = Types
-                                           }).
+line_breaks(CPs, Options) ->
+    case proplists:get_value(line_breaks, Options) of
+        undefined -> [array:size(CPs)];
+        Breaks    -> validate_line_breaks(Breaks, 0, array:size(CPs)), Breaks
+    end.
 
 
-find_embedding_level(_, Idx, Idx) ->
+validate_line_breaks([Break], _, Break) ->
+    ok;
+
+validate_line_breaks([Break | Breaks], Prev, Last) when Break > Prev ->
+    validate_line_breaks(Breaks, Break, Last);
+
+validate_line_breaks(_, _, _) ->
+    error({badarg, line_breaks}).
+
+
+hide_explicit_directional_formatting(Options) ->
+    proplists:get_value(hide_explicit_directional_formatting, Options, true).
+
+
+codepoints(String) ->
+    array:from_list(String).
+
+
+initial_types(String) ->
+    array:from_list([ucd_bidi_class(CP) || CP <- String]).
+
+
+determine_matching_isolates(Types) ->
+    Size = array:size(Types),
+    MPDI = array:new(Size, [{default, undefined}]),
+    MII = array:new(Size, [{default, undefined}]),
+    determine_matching_isolates(0, array:size(Types), Types, MPDI, MII).
+
+determine_matching_isolates(Idx, Idx, _, MPDI, MII) ->
+    {MPDI, MII};
+
+determine_matching_isolates(Idx, ToIdx, Types, MPDI, MII) ->
+    case array:get(Idx, Types) of
+        Type when Type == first_strong_isolate
+                ; Type == left_to_right_isolate
+                ; Type == right_to_left_isolate ->
+            determine_matching_isolates_1(Idx, Idx + 1, ToIdx, 1, Types, MPDI, MII);
+        _ ->
+            determine_matching_isolates(Idx + 1, ToIdx, Types, MPDI, MII)
+    end.
+
+
+determine_matching_isolates_1(StartIdx, ToIdx, ToIdx, _, Types, MPDI, MII) ->
+    MPDI1 = array:set(StartIdx, ToIdx, MPDI),
+    determine_matching_isolates(StartIdx + 1, ToIdx, Types, MPDI1, MII);
+
+determine_matching_isolates_1(StartIdx, Idx, ToIdx, Depth, Types, MPDI, MII) ->
+    case array:get(Idx, Types) of
+        Type when Type == first_strong_isolate
+                ; Type == left_to_right_isolate
+                ; Type == right_to_left_isolate ->
+            determine_matching_isolates_1(StartIdx, Idx + 1, ToIdx, Depth + 1, Types, MPDI, MII);
+
+        pop_directional_isolate when Depth > 1 ->
+            determine_matching_isolates_1(StartIdx, Idx + 1, ToIdx, Depth - 1, Types, MPDI, MII);
+
+        pop_directional_isolate ->
+            MPDI1 = array:set(StartIdx, Idx, MPDI),
+            MII1 = array:set(Idx, StartIdx, MII),
+            determine_matching_isolates(StartIdx + 1, ToIdx, Types, MPDI1, MII1);
+
+        _ ->
+            determine_matching_isolates_1(StartIdx, Idx + 1, ToIdx, Depth, Types, MPDI, MII)
+    end.
+
+
+determine_paragraph_embedding_level(Types, MatchingPDI) ->
+    find_embedding_level(Types, 0, array:size(Types), MatchingPDI).
+
+
+find_embedding_level(_, Idx, Idx, _) ->
     0;
 
-find_embedding_level(#paragraph{result_types=Types}=Paragraph, Idx, ToIdx) ->
+find_embedding_level(Types, Idx, ToIdx, MatchingPDI) ->
     case array:get(Idx, Types) of
         left_to_right ->
             0;
@@ -169,112 +249,59 @@ find_embedding_level(#paragraph{result_types=Types}=Paragraph, Idx, ToIdx) ->
         Type when Type == first_strong_isolate
                 ; Type == left_to_right_isolate
                 ; Type == right_to_left_isolate ->
-            MatchingPDI = Paragraph#paragraph.matching_pdi,
-            find_embedding_level(Paragraph, array:get(Idx, MatchingPDI), ToIdx);
+            find_embedding_level(Types, array:get(Idx, MatchingPDI), ToIdx, MatchingPDI);
 
         _ ->
-            find_embedding_level(Paragraph, Idx + 1, ToIdx)
+            find_embedding_level(Types, Idx + 1, ToIdx, MatchingPDI)
     end.
 
 
-determine_paragraph_embedding_level(#paragraph{result_types=Types}=Paragraph) ->
-    EmbeddingLevel = find_embedding_level(Paragraph, 0, array:size(Types)),
-    Paragraph#paragraph{embedding_level = EmbeddingLevel}.
-
-
-determine_matching_isolates(#paragraph{result_types=Types}=Paragraph) ->
-    Size = array:size(Types),
-    MPDI = array:new(Size, [{default, undefined}, fixed]),
-    MII = array:new(Size, [{default, undefined}, fixed]),
-    determine_matching_isolates(Paragraph, 0, array:size(Types), MPDI, MII).
-
-determine_matching_isolates(Paragraph, Idx, Idx, MPDI, MII) ->
-    Paragraph#paragraph{ matching_pdi = MPDI
-                       , matching_isolate_initiator = MII
-                       };
-
-determine_matching_isolates(Paragraph, Idx, ToIdx, MPDI, MII) ->
-    case array:get(Idx, Paragraph#paragraph.result_types) of
-        Type when Type == first_strong_isolate
-                ; Type == left_to_right_isolate
-                ; Type == right_to_left_isolate ->
-            determine_matching_isolates_1(Paragraph, Idx, Idx + 1, ToIdx, 1, MPDI, MII);
-        _ ->
-            determine_matching_isolates(Paragraph, Idx + 1, ToIdx, MPDI, MII)
-    end.
-
-
-determine_matching_isolates_1(Paragraph, StartIdx, ToIdx, ToIdx, _, MPDI, MII) ->
-    MPDI1 = array:set(StartIdx, ToIdx, MPDI),
-    determine_matching_isolates(Paragraph, StartIdx + 1, ToIdx, MPDI1, MII);
-
-determine_matching_isolates_1(Paragraph, StartIdx, Idx, ToIdx, Depth, MPDI, MII) ->
-    case array:get(Idx, Paragraph#paragraph.result_types) of
-        Type when Type == first_strong_isolate
-                ; Type == left_to_right_isolate
-                ; Type == right_to_left_isolate ->
-            determine_matching_isolates_1(Paragraph, StartIdx, Idx + 1, ToIdx,
-                                          Depth + 1, MPDI, MII);
-
-        pop_directional_isolate when Depth > 1 ->
-            determine_matching_isolates_1(Paragraph, StartIdx, Idx + 1, ToIdx,
-                                          Depth - 1, MPDI, MII);
-
-        pop_directional_isolate ->
-            MPDI1 = array:set(StartIdx, Idx, MPDI),
-            MII1 = array:set(Idx, StartIdx, MII),
-            determine_matching_isolates(Paragraph, StartIdx + 1, ToIdx,
-                                        MPDI1, MII1);
-
-        _ ->
-            determine_matching_isolates_1(Paragraph, StartIdx, Idx + 1, ToIdx,
-                                          Depth, MPDI, MII)
-    end.
-
-
-paragraph_run_uba(P1) ->
-    P2 = init_embedding_levels(P1),
-    P3 = determine_explicit_embedding_levels(P2),
-    Sequences = determine_isolating_run_sequences(P3),
-    P4 = lists:foldl(fun process_isolating_run_sequence/2, P3, Sequences),
-    hide_characters_removed_by_X9(P4).
-
-
-init_embedding_levels(#paragraph{embedding_level=Level, result_types=Types}=P0) ->
-    Levels = array:new(array:size(Types), [{default, Level}, fixed]),
-    P0#paragraph{levels=Levels}.
+run_uba(CPs, Types, ParLevel, MPDI, MII) ->
+    {Types1, Levels} = determine_explicit_embedding_levels(Types, ParLevel, MPDI),
+    Levels1 = process_isolating_run_sequences(CPs, Types, Types1, ParLevel, Levels, MPDI, MII),
+    Levels2 = assign_levels_to_characters_removed_by_X9(Types, Levels1, ParLevel),
+    Levels3 = finalize_levels(Levels2, Types, ParLevel),
+    {CPs, Types, ParLevel, Levels3}.
 
 
 % directional status state
--record(uba_ds,{ paragraph
-               , counter = 0
-               , embedding_level = []
-               , override_status = []
-               , isolate_status = []
-               , overflow_isolate_count = 0
-               , overflow_embedding_count = 0
-               , valid_isolate_count = 0
-               }).
+-record(ds_state,{ types
+                 , levels
+                 , default_level
+                 , matching_pdi
+                 , counter = 0
+                 , embedding_level = []
+                 , override_status = []
+                 , isolate_status = []
+                 , overflow_isolate_count = 0
+                 , overflow_embedding_count = 0
+                 , valid_isolate_count = 0
+                 }).
 
 -define(MAX_DEPTH,125).
 
 -define(CHECK_LEVEL(L,S),L =< ?MAX_DEPTH
-                        ,S#uba_ds.overflow_isolate_count == 0
-                        ,S#uba_ds.overflow_embedding_count == 0).
+                        ,S#ds_state.overflow_isolate_count == 0
+                        ,S#ds_state.overflow_embedding_count == 0).
 
 
-determine_explicit_embedding_levels(Paragraph) ->
-    Types = Paragraph#paragraph.result_types,
-    Level = Paragraph#paragraph.embedding_level,
-    State = uba_ds_push(Level, other_neutral, false, #uba_ds{paragraph=Paragraph}),
-    determine_explicit_embedding_levels_1(0, array:size(Types), State).
+determine_explicit_embedding_levels(Types, DefaultLevel, MatchingPDI) ->
+    Levels = array:new(array:size(Types), [{default, DefaultLevel}]),
+    S0 = #ds_state{ types=Types
+                  , levels=Levels
+                  , default_level=DefaultLevel
+                  , matching_pdi=MatchingPDI
+                  },
+    S1 = ds_push(DefaultLevel, other_neutral, false, S0),
+    determine_explicit_embedding_levels_1(0, array:size(Types), S1).
 
 
-determine_explicit_embedding_levels_1(Idx, Idx, #uba_ds{paragraph=Paragraph}) ->
-    Paragraph;
+determine_explicit_embedding_levels_1(Idx, Idx, #ds_state{types=Ts,levels=Ls}) ->
+    {Ts, Ls};
 
 determine_explicit_embedding_levels_1(Idx, LastIdx, S0) ->
-    S1 = determine_explicit_embedding_levels_2(Idx, uba_ds_type(Idx, S0), S0),
+    Type = array:get(Idx, S0#ds_state.types),
+    S1 = determine_explicit_embedding_levels_2(Idx, Type, S0),
     determine_explicit_embedding_levels_1(Idx + 1, LastIdx, S1).
 
 
@@ -283,19 +310,19 @@ determine_explicit_embedding_levels_2(Idx, Type, S0)
      ; Type == left_to_right_isolate
      ; Type == first_strong_isolate ->
 
-    S1 = case uba_ds_last_override_status(S0) of
+    S1 = case ds_last_override_status(S0) of
              other_neutral      -> S0;
-             LastOverrideStatus -> uba_ds_set_type(Idx, LastOverrideStatus, S0)
+             LastOverrideStatus -> ds_set_type(Idx, LastOverrideStatus, S0)
          end,
 
-    S2 = uba_ds_set_last_embedding_level(Idx, S1),
+    S2 = ds_set_last_embedding_level(Idx, S1),
 
-    case uba_ds_next_embedding_level(Idx, Type, S0) of
+    case ds_next_embedding_level(Idx, Type, S0) of
         Level when ?CHECK_LEVEL(Level,S0) ->
-            S3 = uba_ds_push(Level, Type, true, S2),
-            uba_ds_add_valid_isolate_count(S3);
+            S3 = ds_push(Level, Type, true, S2),
+            ds_add_valid_isolate_count(S3);
         _ ->
-            uba_ds_add_overflow_isolate_count(S2)
+            ds_add_overflow_isolate_count(S2)
     end;
 
 determine_explicit_embedding_levels_2(Idx, Type, S0)
@@ -304,118 +331,115 @@ determine_explicit_embedding_levels_2(Idx, Type, S0)
      ; Type == right_to_left_override
      ; Type == left_to_right_override ->
 
-    case uba_ds_next_embedding_level(Idx, Type, S0) of
+    case ds_next_embedding_level(Idx, Type, S0) of
         Level when ?CHECK_LEVEL(Level,S0) ->
-            S1 = uba_ds_push(Level, Type, false, S0),
-            uba_ds_set_embedding_level(Idx, Level, S1);
+            S1 = ds_push(Level, Type, false, S0),
+            ds_set_embedding_level(Idx, Level, S1);
         _ ->
-            case uba_ds_set_last_embedding_level(Idx, S0) of
-                S1 when S1#uba_ds.overflow_isolate_count == 0 ->
-                    uba_ds_add_overflow_embedding_count(S1);
+            case ds_set_last_embedding_level(Idx, S0) of
+                S1 when S1#ds_state.overflow_isolate_count == 0 ->
+                    ds_add_overflow_embedding_count(S1);
                 S1 -> S1
             end
     end;
 
 determine_explicit_embedding_levels_2(Idx, pop_directional_isolate, S0) ->
     S1 = if
-             S0#uba_ds.overflow_isolate_count > 0 ->
-                 uba_ds_sub_overflow_isolate_count(S0);
+             S0#ds_state.overflow_isolate_count > 0 ->
+                 ds_sub_overflow_isolate_count(S0);
 
-             S0#uba_ds.valid_isolate_count == 0 ->
+             S0#ds_state.valid_isolate_count == 0 ->
                  S0;
 
              true ->
-                 uba_ds_pop_directional_isolate(S0#uba_ds{overflow_embedding_count=0})
+                 ds_pop_directional_isolate(S0#ds_state{overflow_embedding_count=0})
          end,
-    uba_ds_set_last_embedding_level(Idx, S1);
+    ds_set_last_embedding_level(Idx, S1);
 
 determine_explicit_embedding_levels_2(Idx, pop_directional_format, S0) ->
-    S1 = uba_ds_set_last_embedding_level(Idx, S0),
+    S1 = ds_set_last_embedding_level(Idx, S0),
     if
-        S1#uba_ds.overflow_isolate_count > 0 ->
+        S1#ds_state.overflow_isolate_count > 0 ->
             S1;
 
-        S1#uba_ds.overflow_embedding_count > 0 ->
-            uba_ds_sub_overflow_embedding_count(S1);
+        S1#ds_state.overflow_embedding_count > 0 ->
+            ds_sub_overflow_embedding_count(S1);
 
         true ->
-            case uba_ds_last_isolate_status(S1) of
-                false when S1#uba_ds.counter >= 2 -> uba_ds_pop(S1);
-                _                                 -> S1
+            case ds_last_isolate_status(S1) of
+                false when S1#ds_state.counter >= 2 -> ds_pop(S1);
+                _                                   -> S1
             end
     end;
 
-determine_explicit_embedding_levels_2(Idx, paragraph_separator, #uba_ds{paragraph=P0}) ->
-    EmbeddingLevel = P0#paragraph.embedding_level,
-    P1 = P0#paragraph{levels=array:set(Idx, EmbeddingLevel, P0#paragraph.levels)},
-    #uba_ds{paragraph = P1};
+determine_explicit_embedding_levels_2(Idx, paragraph_separator, State) ->
+    Level = State#ds_state.default_level,
+    State#ds_state{levels = array:set(Idx, Level, State#ds_state.levels)};
 
 determine_explicit_embedding_levels_2(Idx, _, S0) ->
-    S1 = uba_ds_set_last_embedding_level(Idx, S0),
-    case uba_ds_last_override_status(S1) of
+    S1 = ds_set_last_embedding_level(Idx, S0),
+    case ds_last_override_status(S1) of
         other_neutral      -> S1;
-        LastOverrideStatus -> uba_ds_set_type(Idx, LastOverrideStatus, S1)
+        LastOverrideStatus -> ds_set_type(Idx, LastOverrideStatus, S1)
     end.
 
 
-uba_ds_push(Level, OverrideType, IsolateStatus,
-            #uba_ds{ counter=Counter
-                   , embedding_level = Ls
-                   , override_status = OSs
-                   , isolate_status = ISs
-                   }=S0) ->
+ds_push(Level, OverrideType, IsolateStatus, #ds_state{ counter=Counter
+                                                     , embedding_level = Ls
+                                                     , override_status = OSs
+                                                     , isolate_status = ISs
+                                                     }=S0) ->
     OverrideStatus = case OverrideType of
                          left_to_right_override -> left_to_right;
                          right_to_left_override -> right_to_left;
                          _                      -> other_neutral
                      end,
-    S0#uba_ds{ counter = Counter + 1
-             , embedding_level = [Level | Ls]
-             , override_status = [OverrideStatus | OSs]
-             , isolate_status = [IsolateStatus | ISs]
-             }.
+    S0#ds_state{ counter = Counter + 1
+               , embedding_level = [Level | Ls]
+               , override_status = [OverrideStatus | OSs]
+               , isolate_status = [IsolateStatus | ISs]
+               }.
 
 
-uba_ds_pop(#uba_ds{ counter=Counter
-                  , embedding_level = [_ | Ls]
-                  , override_status = [_ | OSs]
-                  , isolate_status = [_ | ISs]
-                  }=S0) ->
+ds_pop(#ds_state{ counter=Counter
+                , embedding_level = [_ | Ls]
+                , override_status = [_ | OSs]
+                , isolate_status = [_ | ISs]
+                }=S0) ->
 
-    S0#uba_ds{ counter = Counter - 1
-             , embedding_level = Ls
-             , override_status = OSs
-             , isolate_status = ISs
-             }.
+    S0#ds_state{ counter = Counter - 1
+               , embedding_level = Ls
+               , override_status = OSs
+               , isolate_status = ISs
+               }.
 
-uba_ds_set_last_embedding_level(Idx, #uba_ds{paragraph=P0,embedding_level=Ls}=S0) ->
-    Levels = P0#paragraph.levels,
-    P1 = P0#paragraph{levels=array:set(Idx, hd(Ls), Levels)},
-    S0#uba_ds{paragraph=P1}.
-
-uba_ds_last_embedding_level(#uba_ds{embedding_level=[L|_]}) -> L.
+ds_set_last_embedding_level(Idx, #ds_state{levels=Levels,embedding_level=Ls}=S0) ->
+    S0#ds_state{levels=array:set(Idx, hd(Ls), Levels)}.
 
 
-uba_ds_set_embedding_level(Idx, Level, #uba_ds{paragraph=P0}=S0) ->
-    Levels = P0#paragraph.levels,
-    P1 = P0#paragraph{levels=array:set(Idx, Level, Levels)},
-    S0#uba_ds{paragraph=P1}.
+ds_last_embedding_level(#ds_state{embedding_level=[L|_]}) -> L.
 
 
-uba_ds_pop_directional_isolate(#uba_ds{isolate_status=[false|_]}=S0) ->
-    uba_ds_pop_directional_isolate(uba_ds_pop(S0));
-
-uba_ds_pop_directional_isolate(S0) ->
-    S1 = uba_ds_pop(S0),
-    S1#uba_ds{valid_isolate_count = S1#uba_ds.valid_isolate_count - 1}.
+ds_set_embedding_level(Idx, Level, #ds_state{levels=Levels}=S0) ->
+    S0#ds_state{levels=array:set(Idx, Level, Levels)}.
 
 
-uba_ds_next_embedding_level(Idx, Type, #uba_ds{paragraph=P}=S) ->
+ds_pop_directional_isolate(#ds_state{isolate_status=[false|_]}=S0) ->
+    ds_pop_directional_isolate(ds_pop(S0));
+
+ds_pop_directional_isolate(S0) ->
+    S1 = ds_pop(S0),
+    S1#ds_state{valid_isolate_count = S1#ds_state.valid_isolate_count - 1}.
+
+
+ds_next_embedding_level(Idx, Type, State) ->
+    MatchingPDI = State#ds_state.matching_pdi,
     IsRTL = case Type of
                 first_strong_isolate ->
-                    find_embedding_level(P
+                    find_embedding_level(State#ds_state.types
                                         ,Idx + 1
-                                        ,array:get(Idx, P#paragraph.matching_pdi)
+                                        ,array:get(Idx, MatchingPDI)
+                                        ,MatchingPDI
                                         ) == 1;
                 right_to_left_embedding -> true;
                 right_to_left_override  -> true;
@@ -424,162 +448,128 @@ uba_ds_next_embedding_level(Idx, Type, #uba_ds{paragraph=P}=S) ->
             end,
     case IsRTL of
         true -> % least greater odd
-            (uba_ds_last_embedding_level(S) + 1) bor 1;
+            (ds_last_embedding_level(State) + 1) bor 1;
 
         false -> % least greater even
-            (uba_ds_last_embedding_level(S) + 2) band (bnot 1)
+            (ds_last_embedding_level(State) + 2) band (bnot 1)
     end.
 
 
-uba_ds_add_valid_isolate_count(#uba_ds{valid_isolate_count=V}=S) ->
-    S#uba_ds{valid_isolate_count = V + 1}.
+ds_add_valid_isolate_count(#ds_state{valid_isolate_count=V}=S) ->
+    S#ds_state{valid_isolate_count = V + 1}.
 
 
-uba_ds_add_overflow_isolate_count(#uba_ds{overflow_isolate_count=V}=S) ->
-    S#uba_ds{overflow_isolate_count = V + 1}.
+ds_add_overflow_isolate_count(#ds_state{overflow_isolate_count=V}=S) ->
+    S#ds_state{overflow_isolate_count = V + 1}.
 
-uba_ds_sub_overflow_isolate_count(#uba_ds{overflow_isolate_count=V}=S) ->
-    S#uba_ds{overflow_isolate_count = V - 1}.
-
-
-uba_ds_add_overflow_embedding_count(#uba_ds{overflow_embedding_count=V}=S) ->
-    S#uba_ds{overflow_embedding_count = V + 1}.
-
-uba_ds_sub_overflow_embedding_count(#uba_ds{overflow_embedding_count=V}=S) ->
-    S#uba_ds{overflow_embedding_count = V - 1}.
+ds_sub_overflow_isolate_count(#ds_state{overflow_isolate_count=V}=S) ->
+    S#ds_state{overflow_isolate_count = V - 1}.
 
 
-uba_ds_last_isolate_status(#uba_ds{isolate_status=[V|_]}) -> V.
+ds_add_overflow_embedding_count(#ds_state{overflow_embedding_count=V}=S) ->
+    S#ds_state{overflow_embedding_count = V + 1}.
+
+ds_sub_overflow_embedding_count(#ds_state{overflow_embedding_count=V}=S) ->
+    S#ds_state{overflow_embedding_count = V - 1}.
 
 
-uba_ds_last_override_status(#uba_ds{override_status=[V|_]}) -> V.
+ds_last_isolate_status(#ds_state{isolate_status=[V|_]}) -> V.
 
 
-uba_ds_type(Idx, #uba_ds{paragraph=P}) ->
-    array:get(Idx, P#paragraph.result_types).
-
-uba_ds_set_type(Idx, Type, #uba_ds{paragraph=P0}=S) ->
-    Types = P0#paragraph.result_types,
-    P1 = P0#paragraph{result_types=array:set(Idx, Type, Types)},
-    S#uba_ds{paragraph=P1}.
+ds_last_override_status(#ds_state{override_status=[V|_]}) -> V.
 
 
-% isolating run sequence
--record(uba_irs,{ indices :: array(index())
-                , types :: array(bidirectional_class())
-                , resolved_levels :: array(non_neg_integer())
-                , level :: non_neg_integer()
-                , sos :: bidirectional_class()
-                , eos :: bidirectional_class()
-                }).
+ds_set_type(Idx, Type, #ds_state{types=Types}=State) ->
+    State#ds_state{types=array:set(Idx, Type, Types)}.
+
 
 %% definition BD13
-determine_isolating_run_sequences(Paragraph) ->
-    LevelRuns = determine_level_runs(Paragraph),
+process_isolating_run_sequences(CPs, InitialTypes, Types, ParLevel, Levels, MPDI, MII) ->
+    LevelRuns = determine_level_runs(InitialTypes, Levels),
     RunForCh = run_for_character(LevelRuns),
-    Seqs = array:foldl(
-             fun (_, Run, Acc) ->
-                     determine_isolating_run_sequence(Run, LevelRuns, RunForCh, Paragraph, Acc)
-             end, [], LevelRuns),
-    lists:reverse(Seqs).
+    array:foldl(fun (_, Run, Acc) ->
+                    case isolating_run(Run, LevelRuns, RunForCh, InitialTypes, MPDI, MII) of
+                        undefined ->
+                            Acc;
+                        Run1 ->
+                            process_isolating_run_sequence(Run1, CPs, Types, InitialTypes, ParLevel, Levels, Acc)
+                    end
+                end, Levels, LevelRuns).
 
-determine_isolating_run_sequence([FirstCh|_]=Run, LevelRuns, RunForCh, Paragraph, Acc) ->
-    case array:get(FirstCh, Paragraph#paragraph.initial_types) of
+
+isolating_run([FirstCh|_]=Run, LevelRuns, RunForCh, InitialTypes, MPDI, MII) ->
+    case array:get(FirstCh, InitialTypes) of
         T when T /= pop_directional_isolate ->
-            [determine_isolating_run_sequence_1(LevelRuns, RunForCh, Paragraph, Run) | Acc];
+            isolating_run_1(Run, LevelRuns, RunForCh, InitialTypes, MPDI);
         _ ->
-            case array:get(FirstCh, Paragraph#paragraph.matching_isolate_initiator) of
+            case array:get(FirstCh, MII) of
                 undefined ->
-                    [determine_isolating_run_sequence_1(LevelRuns, RunForCh, Paragraph, Run) | Acc];
+                    isolating_run_1(Run, LevelRuns, RunForCh, InitialTypes, MPDI);
                 _ ->
-                    Acc
+                    undefined
             end
     end.
 
-determine_isolating_run_sequence_1(LevelRuns, RunForCh, Paragraph, Run) ->
+
+isolating_run_1(Run, LevelRuns, RunForCh, InitialTypes, MPDI) ->
     LastCh = lists:last(Run),
-    case array:get(LastCh, Paragraph#paragraph.initial_types) of
+    case array:get(LastCh, InitialTypes) of
         T when T == left_to_right_isolate
              ; T == right_to_left_isolate
              ; T == first_strong_isolate ->
-            MatchingPDI = array:get(LastCh, Paragraph#paragraph.matching_pdi),
-            TextLength = array:size(Paragraph#paragraph.initial_types),
+            MatchingPDI = array:get(LastCh, MPDI),
+            TextLength = array:size(InitialTypes),
             if
                 MatchingPDI /= TextLength ->
                     NextRunIdx = maps:get(MatchingPDI, RunForCh),
-                    NextRun = array:get(NextRunIdx, LevelRuns),
-                    determine_isolating_run_sequence_1(LevelRuns, RunForCh, Paragraph, Run ++ NextRun);
+                    NextRun = Run ++ array:get(NextRunIdx, LevelRuns),
+                    isolating_run_1(NextRun, LevelRuns, RunForCh, InitialTypes, MPDI);
                 true ->
-                    create_isolating_run_sequence(Run, Paragraph)
+                    Run
             end;
         _ ->
-            create_isolating_run_sequence(Run, Paragraph)
+            Run
     end.
 
 
-create_isolating_run_sequence(Run, Paragraph) ->
-    Indices = array:fix(array:from_list(Run)),
+prev_level([Idx | _], Types, InitialTypes, ParLevel, Levels) ->
+    prev_level_1(Idx - 1, Types, InitialTypes, ParLevel, Levels).
 
-    Types = Paragraph#paragraph.result_types,
-    SeqTypes = array:fix(array:from_list([array:get(Idx, Types) || Idx <- Run])),
-
-    Level = array:get(hd(Run), Paragraph#paragraph.levels),
-    SeqLevels = array:new(array:size(Indices), [{default, Level}, fixed]),
-
-    PrevLevel = isolating_run_sequence_prev_level(Run, Paragraph),
-    SuccLevel = isolating_run_sequence_succ_level(Run, Paragraph),
-
-    #uba_irs{ indices = Indices
-            , types = SeqTypes
-            , resolved_levels = SeqLevels
-            , level = Level
-            , sos = type_for_level(max(PrevLevel, Level))
-            , eos = type_for_level(max(SuccLevel, Level))
-            }.
-
-
-isolating_run_sequence_prev_level([Idx | _], Paragraph) ->
-    isolating_run_sequence_prev_level_1(Idx - 1, Paragraph).
-
-isolating_run_sequence_prev_level_1(Idx, Paragraph) when Idx >= 0 ->
-    case is_removed_by_X9(array:get(Idx, Paragraph#paragraph.initial_types)) of
-        true  -> isolating_run_sequence_prev_level_1(Idx - 1, Paragraph);
-        false -> array:get(Idx, Paragraph#paragraph.levels)
+prev_level_1(Idx, Types, InitialTypes, ParLevel, Levels) when Idx >= 0 ->
+    case is_removed_by_X9(array:get(Idx, InitialTypes)) of
+        true  -> prev_level_1(Idx - 1, Types, InitialTypes, ParLevel, Levels);
+        false -> array:get(Idx, Levels)
     end;
 
-isolating_run_sequence_prev_level_1(_, Paragraph) ->
-    Paragraph#paragraph.embedding_level.
+prev_level_1(_, _, _, ParLevel, _) ->
+    ParLevel.
 
 
-isolating_run_sequence_succ_level(Run, Paragraph) ->
+succ_level(Run, Types, InitialTypes, ParLevel, Levels) ->
     LastIdx = lists:last(Run),
-    case array:get(LastIdx, Paragraph#paragraph.result_types) of
+    case array:get(LastIdx, Types) of
         Type when Type == left_to_right_isolate
                 ; Type == right_to_left_isolate
                 ; Type == first_strong_isolate ->
-            Paragraph#paragraph.embedding_level;
+            ParLevel;
         _ ->
-            isolating_run_sequence_succ_level_1(LastIdx + 1, Paragraph)
+            succ_level_1(LastIdx + 1, InitialTypes, ParLevel, Levels)
     end.
 
-isolating_run_sequence_succ_level_1(Idx, Paragraph) ->
-    Size = array:size(Paragraph#paragraph.initial_types),
+succ_level_1(Idx, InitialTypes, ParLevel, Levels) ->
+    Size = array:size(InitialTypes),
     if
         Idx >= Size ->
-            Paragraph#paragraph.embedding_level;
+            ParLevel;
         true ->
-            case is_removed_by_X9(array:get(Idx, Paragraph#paragraph.initial_types)) of
-                true  ->
-                    isolating_run_sequence_succ_level_1(Idx+1, Paragraph);
-                false ->
-                    array:get(Idx, Paragraph#paragraph.levels)
+            case is_removed_by_X9(array:get(Idx, InitialTypes)) of
+                true  -> succ_level_1(Idx+1, InitialTypes, ParLevel, Levels);
+                false -> array:get(Idx, Levels)
             end
     end.
 
 
-determine_level_runs(Paragraph) ->
-    Types = Paragraph#paragraph.initial_types,
-    Levels = Paragraph#paragraph.levels,
+determine_level_runs(Types, Levels) ->
     determine_level_runs(0, array:size(Types), Types, Levels, hide, [[]]).
 
 
@@ -615,36 +605,45 @@ run_for_character(RunIdx, LevelRun, AccIn) ->
     lists:foldl(fun (ChIdx, Acc) -> Acc#{ChIdx => RunIdx} end, AccIn, LevelRun).
 
 
-process_isolating_run_sequence(S0, P) ->
+process_isolating_run_sequence(Run, CPs, Types, InitialTypes, ParLevel, LevelsIn, LevelsOut) ->
+    Indices = array:from_list(Run),
+
+    Level = array:get(hd(Run), LevelsIn),
+
+    PrevLevel = prev_level(Run, Types, InitialTypes, ParLevel, LevelsIn),
+    SuccLevel = succ_level(Run, Types, InitialTypes, ParLevel, LevelsIn),
+
+    SoS = type_for_level(max(PrevLevel, Level)),
+    EoS = type_for_level(max(SuccLevel, Level)),
+
+    Ts0 = array:from_list([array:get(Idx, Types) || Idx <- Run]),
+
     % Rules W1-W7
-    S1 = resolve_weak_types(S0),
+    Ts1 = resolve_weak_types(Ts0, SoS, EoS),
 
     % Rule N0
-    S2 = resolve_paired_brackets(S1, P#paragraph.codepoints, P#paragraph.initial_types),
+    Ts2 = resolve_paired_brackets(Ts1, Level, Indices, SoS, CPs, InitialTypes),
 
     % Rules N1-N3
-    S3 = resolve_neutral_types(S2),
+    Ts3 = resolve_neutral_types(Ts2, Level, SoS, EoS),
 
     % Rules I1, I2
-    S4 = resolve_implicit_levels(S3),
-
-    apply_levels_and_types(S4, P).
+    resolve_implicit_levels(Ts3, Level, Indices, LevelsOut).
 
 
-resolve_weak_types(S0) ->
-    S1 = resolve_weak_types_w1(S0),
-    S2 = resolve_weak_types_w2(S1),
-    S3 = resolve_weak_types_w3(S2),
-    S4 = resolve_weak_types_w4(S3),
-    S5 = resolve_weak_types_w5(S4),
-    S6 = resolve_weak_types_w6(S5),
-    resolve_weak_types_w7(S6).
+resolve_weak_types(Ts0, SoS, EoS) ->
+    Ts1 = resolve_weak_types_w1(Ts0, SoS),
+    Ts2 = resolve_weak_types_w2(Ts1),
+    Ts3 = resolve_weak_types_w3(Ts2),
+    Ts4 = resolve_weak_types_w4(Ts3),
+    Ts5 = resolve_weak_types_w5(Ts4, SoS, EoS),
+    Ts6 = resolve_weak_types_w6(Ts5),
+    resolve_weak_types_w7(Ts6, SoS).
 
 
 % Rule W1: Changes all NSMs
-resolve_weak_types_w1(#uba_irs{types=Ts0,sos=SoS}=S) ->
-    Ts1 = resolve_weak_types_w1(0, array:size(Ts0), Ts0, SoS),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w1(Ts, SoS) ->
+    resolve_weak_types_w1(0, array:size(Ts), Ts, SoS).
 
 resolve_weak_types_w1(Idx, Idx, Types, _) ->
     Types;
@@ -665,9 +664,8 @@ resolve_weak_types_w1(Idx, Size, Types, PrevCharType) ->
 
 
 % Rule W2: EN does not change at the start of the run, because sos != AL
-resolve_weak_types_w2(#uba_irs{types=Ts0}=S) ->
-    Ts1 = resolve_weak_types_w2(0, array:size(Ts0), Ts0),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w2(Ts) ->
+    resolve_weak_types_w2(0, array:size(Ts), Ts).
 
 resolve_weak_types_w2(Idx, Idx, Types) ->
     Types;
@@ -697,9 +695,8 @@ resolve_weak_types_w2_1(_, _, Types) ->
 
 
 % Rule W3
-resolve_weak_types_w3(#uba_irs{types=Ts0}=S) ->
-    Ts1 = resolve_weak_types_w3(0, array:size(Ts0), Ts0),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w3(Ts) ->
+    resolve_weak_types_w3(0, array:size(Ts), Ts).
 
 resolve_weak_types_w3(Idx, Idx, Types) ->
     Types;
@@ -715,9 +712,8 @@ resolve_weak_types_w3(Idx, Size, Types) ->
 
 
 % Rule W4
-resolve_weak_types_w4(#uba_irs{types=Ts0}=S) ->
-    Ts1 = resolve_weak_types_w4(1, array:size(Ts0) - 1, Ts0),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w4(Ts) ->
+    resolve_weak_types_w4(1, array:size(Ts) - 1, Ts).
 
 
 resolve_weak_types_w4(Idx, End, Types) when Idx >= End ->
@@ -743,9 +739,8 @@ resolve_weak_types_w4(Idx, End, Types) ->
 
 
 % Rule W5
-resolve_weak_types_w5(#uba_irs{types=Ts0,sos=SoS,eos=EoS}=S) ->
-    Ts1 = resolve_weak_types_w5(0, array:size(Ts0), Ts0, SoS, EoS),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w5(Ts, SoS, EoS) ->
+    resolve_weak_types_w5(0, array:size(Ts), Ts, SoS, EoS).
 
 resolve_weak_types_w5(Idx, Idx, Types, _, _) ->
     Types;
@@ -783,9 +778,8 @@ resolve_weak_types_w5(Idx, Size, Types, SoS, EoS) ->
 
 
 % Rule W6
-resolve_weak_types_w6(#uba_irs{types=Ts0}=S) ->
-    Ts1 = resolve_weak_types_w6(0, array:size(Ts0), Ts0),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w6(Ts) ->
+    resolve_weak_types_w6(0, array:size(Ts), Ts).
 
 resolve_weak_types_w6(Idx, Idx, Types) ->
     Types;
@@ -803,9 +797,8 @@ resolve_weak_types_w6(Idx, Size, Types) ->
 
 
 % Rule W7
-resolve_weak_types_w7(#uba_irs{types=Ts0, sos=SoS}=S) ->
-    Ts1 = resolve_weak_types_w7(0, array:size(Ts0), Ts0, SoS),
-    S#uba_irs{types=Ts1}.
+resolve_weak_types_w7(Ts, SoS) ->
+    resolve_weak_types_w7(0, array:size(Ts), Ts, SoS).
 
 resolve_weak_types_w7(Idx, Idx, Types, _) ->
     Types;
@@ -837,16 +830,9 @@ resolve_weak_types_w7_1(_, _, PrevStrongType) ->
 
 -define(BRACKETS_STACK_LIMIT,63).
 
-resolve_paired_brackets(#uba_irs{ indices = Indices
-                                , types = Types0
-                                , level = Level
-                                , sos = SoS
-                                } = S,
-                        CPs, InitialTypes) ->
+resolve_paired_brackets(Types0, Level, Indices, SoS, CPs, InitialTypes) ->
     Brackets = locate_brackets(Indices, Types0, CPs),
-    Types1 = resolve_brackets(Brackets, Types0, SoS, type_for_level(Level),
-                              Indices, InitialTypes),
-    S#uba_irs{types = Types1}.
+    resolve_brackets(Brackets, Types0, SoS, type_for_level(Level), Indices, InitialTypes).
 
 
 locate_brackets(Indices, Types, CPs) ->
@@ -911,12 +897,8 @@ assign_bracket_type(Bracket, Types, SoS, DirEmbed, Indices, InitialTypes) ->
         DirEmbed ->
             set_brackets_to_type(Bracket, DirEmbed, Types, Indices, InitialTypes);
         _ ->
-            case class_before_bracket(Bracket, Types, SoS) of
-                other_neutral ->
-                    set_brackets_to_type(Bracket, DirEmbed, Types, Indices, InitialTypes);
-                V ->
-                    set_brackets_to_type(Bracket, V, Types, Indices, InitialTypes)
-            end
+            V = class_before_bracket(Bracket, Types, SoS),
+            set_brackets_to_type(Bracket, V, Types, Indices, InitialTypes)
     end.
 
 
@@ -970,14 +952,14 @@ set_brackets_nsm(_, _, _, Types, _, _) ->
     Types.
 
 
-resolve_neutral_types(#uba_irs{types=Ts}=S) ->
-    resolve_neutral_types(0, array:size(Ts), S).
+resolve_neutral_types(Ts0, Level, SoS, EoS) ->
+    resolve_neutral_types(0, array:size(Ts0), Ts0, Level, SoS, EoS).
 
-resolve_neutral_types(Idx, Idx, S) ->
-    S;
+resolve_neutral_types(Idx, Idx, Types, _, _, _) ->
+    Types;
 
-resolve_neutral_types(Idx, Size, S) ->
-    case array:get(Idx, S#uba_irs.types) of
+resolve_neutral_types(Idx, Size, Types0, Level, SoS, EoS) ->
+    case array:get(Idx, Types0) of
         Type when Type == white_space
                 ; Type == other_neutral
                 ; Type == paragraph_separator
@@ -986,7 +968,6 @@ resolve_neutral_types(Idx, Size, S) ->
                 ; Type == left_to_right_isolate
                 ; Type == first_strong_isolate
                 ; Type == pop_directional_isolate ->
-            Types0 = S#uba_irs.types,
             RunStart = Idx,
             RunLimit = find_run_limit(RunStart, Size, Types0,
                                       [ paragraph_separator
@@ -999,7 +980,7 @@ resolve_neutral_types(Idx, Size, S) ->
                                       , pop_directional_isolate
                                       ]),
             LeadingType = case RunStart of
-                              0 -> S#uba_irs.sos;
+                              0 -> SoS;
                               _ -> case array:get(RunStart - 1, Types0) of
                                        arabic_number -> right_to_left;
                                        european_number -> right_to_left;
@@ -1007,7 +988,7 @@ resolve_neutral_types(Idx, Size, S) ->
                                    end
                           end,
             TrailingType = case RunLimit of
-                               Size -> S#uba_irs.eos;
+                               Size -> EoS;
                                _ -> case array:get(RunLimit, Types0) of
                                        arabic_number -> right_to_left;
                                        european_number -> right_to_left;
@@ -1017,137 +998,129 @@ resolve_neutral_types(Idx, Size, S) ->
 
             ResolvedType = if
                                LeadingType == TrailingType -> LeadingType; % Rule N1
-                               true -> type_for_level(S#uba_irs.level) % Rule N2
+                               true -> type_for_level(Level) % Rule N2
                            end,
 
             Types1 = set_types(RunStart, RunLimit, ResolvedType, Types0),
 
-            resolve_neutral_types(RunLimit, Size, S#uba_irs{types = Types1});
+            resolve_neutral_types(RunLimit, Size, Types1, Level, SoS, EoS);
         _ ->
-            resolve_neutral_types(Idx + 1, Size, S)
+            resolve_neutral_types(Idx + 1, Size, Types0, Level, SoS, EoS)
     end.
 
 
 % resolving implicit embedding levels Rules I1, I2
-resolve_implicit_levels(#uba_irs{level=L,types=Ts}=Seq) when (L band 1) == 0 ->
-    Levels = array:foldl(fun (_,   left_to_right, Ls) -> Ls;
-                             (Idx, right_to_left, Ls) -> array:set(Idx, array:get(Idx, Ls) + 1, Ls);
-                             (Idx, _, Ls)             -> array:set(Idx, array:get(Idx, Ls) + 2, Ls)
-                         end,
-                         Seq#uba_irs.resolved_levels, Ts),
-     Seq#uba_irs{resolved_levels=Levels};
+resolve_implicit_levels(Ts, L, Indices, Levels) when (L band 1) == 0 ->
+    array:foldl(fun (Idx, Type, Ls) ->
+                        OrigIdx = array:get(Idx, Indices),
+                        V = case Type of
+                                left_to_right -> L;
+                                right_to_left -> L + 1;
+                                _             -> L + 2
+                            end,
+                        array:set(OrigIdx, V, Ls)
+                end,
+                Levels, Ts);
 
-resolve_implicit_levels(#uba_irs{types=Ts}=Seq) ->
-    Levels = array:foldl(fun (_, right_to_left, Ls) -> Ls;
-                             (Idx, _, Ls)           -> array:set(Idx, array:get(Idx, Ls) + 1, Ls)
-                         end,
-                         Seq#uba_irs.resolved_levels, Ts),
-     Seq#uba_irs{resolved_levels=Levels}.
-
-
-apply_levels_and_types(Seq, Paragraph) ->
-    Types = Seq#uba_irs.types,
-    Levels = Seq#uba_irs.resolved_levels,
-    array:foldl(fun (Idx, OrigIdx, P) ->
-                        Type = array:get(Idx, Types),
-                        Level = array:get(Idx, Levels),
-                        PTypes = P#paragraph.result_types,
-                        PLevels = P#paragraph.levels,
-                        P#paragraph{ result_types = array:set(OrigIdx, Type, PTypes)
-                                   , levels = array:set(OrigIdx, Level, PLevels)
-                                   }
-                end, Paragraph, Seq#uba_irs.indices).
+resolve_implicit_levels(Ts, L, Indices, Levels) ->
+    array:foldl(fun (Idx, Type, Ls) ->
+                        OrigIdx = array:get(Idx, Indices),
+                        V = case Type of
+                                right_to_left -> L;
+                                _             -> L + 1
+                            end,
+                        array:set(OrigIdx, V, Ls)
+                end,
+                Levels, Ts).
 
 
-hide_characters_removed_by_X9(Paragraph) ->
-    array:foldl(fun (Idx, Type, P) when Type == left_to_right_embedding
-                                      ; Type == right_to_left_embedding
-                                      ; Type == left_to_right_override
-                                      ; Type == right_to_left_override
-                                      ; Type == pop_directional_format
-                                      ; Type == boundary_neutral ->
-                        Types = P#paragraph.result_types,
-                        Levels = P#paragraph.levels,
-                        P#paragraph{ result_types = array:set(Idx, Type, Types)
-                                   , levels = array:set(Idx, hide, Levels)
-                                   };
-                    (_, _, P) ->
-                        P
-                end, Paragraph, Paragraph#paragraph.initial_types).
-
-
-get_levels(Paragraph, LineBreaks) ->
-    L0 = Paragraph#paragraph.levels,
-    L1 = get_levels_1(0, array:size(L0), L0, Paragraph),
-    get_levels_2(L1, Paragraph, LineBreaks).
+assign_levels_to_characters_removed_by_X9(Types, Levels, EmbeddingLevel) ->
+    Fun = fun (Idx, Type, {PrevLevel, L0}) ->
+                  case is_removed_by_X9(Type) of
+                      true  -> {PrevLevel, array:set(Idx, PrevLevel, L0)};
+                      false -> {array:get(Idx, L0), L0}
+                  end
+          end,
+    {_, L1} = array:foldl(Fun, {EmbeddingLevel, Levels}, Types),
+    L1.
 
 
 % Rule L1, clauses one, two and three
-get_levels_1(Idx, Idx, Levels, _) ->
+finalize_levels(Levels, Types, ParLevel) ->
+    finalize_levels(0, array:size(Levels), Levels, Types, ParLevel).
+
+finalize_levels(Idx, Idx, Levels, _, _) ->
     Levels;
 
-get_levels_1(Idx, Size, Levels, Paragraph) ->
-    case array:get(Idx, Paragraph#paragraph.initial_types) of
+finalize_levels(Idx, Size, Levels, Types, ParLevel) ->
+    case array:get(Idx, Types) of
         T when T == paragraph_separator
              ; T == segment_separator ->
-            L1 = array:set(Idx, Paragraph#paragraph.embedding_level, Levels),
-            L2 = get_levels_1_1(Idx - 1, L1, Paragraph),
-            get_levels_1(Idx + 1, Size, L2, Paragraph);
+            L1 = array:set(Idx, ParLevel, Levels),
+            L2 = finalize_levels_1(Idx - 1, L1, Types, ParLevel),
+            finalize_levels(Idx + 1, Size, L2, Types, ParLevel);
         _ ->
-            get_levels_1(Idx + 1, Size, Levels, Paragraph)
+            finalize_levels(Idx + 1, Size, Levels, Types, ParLevel)
     end.
 
 % Rule L1, clause three
-get_levels_1_1(Idx, Levels, Paragraph) when Idx >= 0 ->
-    case is_whitespace(array:get(Idx, Paragraph#paragraph.initial_types)) of
+finalize_levels_1(Idx, Levels, Types, ParLevel) when Idx >= 0 ->
+    Type = array:get(Idx, Types),
+    case is_whitespace(Type) of
         true ->
-            L1 = case array:get(Idx, Levels) of
-                     hide -> Levels;
-                     _    -> array:set(Idx, Paragraph#paragraph.embedding_level, Levels)
+            L1 = case is_removed_by_X9(Type) of
+                     true  -> Levels;
+                     false -> array:set(Idx, ParLevel, Levels)
                  end,
-            get_levels_1_1(Idx - 1, L1, Paragraph);
+            finalize_levels_1(Idx - 1, L1, Types, ParLevel);
         false ->
             Levels
     end;
 
-get_levels_1_1(_, Levels, _) ->
+finalize_levels_1(_, Levels, _, _) ->
     Levels.
 
 
 % Rule L1, clause four
-get_levels_2(Levels, Paragraph, LineBreaks) ->
-    Types = Paragraph#paragraph.initial_types,
-    ParLevel = Paragraph#paragraph.embedding_level,
+get_levels(Levels, Types, ParLevel, LineBreaks) ->
     {L2, _} = lists:foldl(fun (LB, {LIn, Start}) ->
-                                  LOut = get_levels_2_1(LB - 1, Start, LIn, Types, ParLevel),
+                                  LOut = get_levels_1(LB - 1, Start, LIn, Types, ParLevel),
                                   {LOut, LB}
                           end, {Levels, 0}, LineBreaks),
     L2.
 
-get_levels_2_1(Idx, Start, Levels, Types, Level) when Idx >= Start ->
-    case is_whitespace(array:get(Idx, Types)) of
+get_levels_1(Idx, Start, Levels, Types, Level) when Idx >= Start ->
+    Type = array:get(Idx, Types),
+    case is_whitespace(Type) of
         true ->
-            L1 = case array:get(Idx, Levels) of
-                     hide -> Levels;
-                     _    -> array:set(Idx, Level, Levels)
+            L1 = case is_removed_by_X9(Type) of
+                     true  -> Levels;
+                     false -> array:set(Idx, Level, Levels)
                  end,
-            get_levels_2_1(Idx - 1, Start, L1, Types, Level);
+            get_levels_1(Idx - 1, Start, L1, Types, Level);
         false ->
             Levels
     end;
 
-get_levels_2_1(_, _, Levels, _, _) ->
+get_levels_1(_, _, Levels, _, _) ->
     Levels.
 
 
-multiline_reordering(Levels, EmbeddingLevel, LineBreaks) ->
-    Levels1 = assign_levels_to_characters_removed_by_X9(Levels, EmbeddingLevel),
-    Idxs = multiline_reordering(Levels1, LineBreaks, 0, []),
-    [Idx || Idx <- Idxs, array:get(Idx, Levels) /= hide].
+hide_levels_for_characters_removed_by_X9(Types, Levels) ->
+    array:foldr(fun (Idx, Type, Acc) ->
+                    case is_removed_by_X9(Type) of
+                        true  -> [hide | Acc];
+                        false -> [array:get(Idx, Levels) | Acc]
+                    end
+                end, [], Types).
+
+
+multiline_reordering(Levels, LineBreaks) ->
+    multiline_reordering(Levels, LineBreaks, 0, []).
 
 
 multiline_reordering(_, [], _, Acc) ->
-    lists:reverse(Acc);
+    lists:flatten(lists:reverse(Acc));
 
 multiline_reordering(Levels, [LineBreak | LineBreaks], Start, Acc0) ->
     Acc1 = compute_reordering(Levels, Start, LineBreak, Acc0),
@@ -1158,7 +1131,7 @@ compute_reordering(Levels, Start, Limit, Acc) ->
     {Highest, LowestOdd} = find_highest_lowest_odd_levels(Levels, Start, Limit),
     Idxs0 = array:from_list(lists:seq(Start, Limit - 1)),
     Idxs1 = compute_reordering_1(Highest, LowestOdd, Levels, Start, Limit, Idxs0),
-    array:foldl(fun (_, V, Acc0) -> [V | Acc0] end, Acc, Idxs1).
+    [array:to_list(Idxs1) | Acc].
 
 
 compute_reordering_1(Level, LowestOdd, Levels, Start, Limit, Idxs0)
@@ -1224,15 +1197,6 @@ reverse_run_1(From, To, Idxs0) when From < To ->
 
 reverse_run_1(_, _, Idxs) ->
     Idxs.
-
-
-assign_levels_to_characters_removed_by_X9(Levels, EmbeddingLevel) ->
-    {_, L1} = array:foldl(fun (Idx, hide, {PrevLevel, L0}) ->
-                                  {PrevLevel, array:set(Idx, PrevLevel, L0)};
-                              (_, Level, {_, L0}) ->
-                                  {Level, L0}
-                          end, {EmbeddingLevel, Levels}, Levels),
-    L1.
 
 
 is_removed_by_X9(Type) ->
@@ -1349,71 +1313,64 @@ bracket_test_() -> [
    ,?_assertEqual(none, bracket($*))
 ].
 
--define(PARAGRAPH(Ts),
+-define(ISOLATES(Ts),
         begin
-          PTs = array:from_list(Ts),
-          P0 = #paragraph{initial_types=PTs, result_types=PTs},
-          P1 = determine_matching_isolates(P0),
-          {array:to_list(P1#paragraph.matching_pdi)
-          ,array:to_list(P1#paragraph.matching_isolate_initiator)}
+          {MPDI, MII} = determine_matching_isolates(array:from_list(Ts)),
+          {array:to_list(MPDI), array:to_list(MII)}
         end).
 
 determine_matching_isolates_test_() -> [
      ?_assertMatch({[undefined, 3, undefined, undefined, undefined]
                    ,[undefined, undefined, undefined, 1, undefined]},
-                   ?PARAGRAPH([ left_to_right
-                              , left_to_right_isolate
-                              , arabic_number
-                              , pop_directional_isolate
-                              , left_to_right ]))
+                   ?ISOLATES([ left_to_right
+                             , left_to_right_isolate
+                             , arabic_number
+                             , pop_directional_isolate
+                             , left_to_right ]))
 
     ,?_assertMatch({[undefined,6,4,undefined,undefined,undefined,undefined,undefined]
                    ,[undefined,undefined,undefined,undefined,2,undefined,1,undefined]},
-                   ?PARAGRAPH([ arabic_number
-                              , left_to_right_isolate
-                              , right_to_left_isolate
-                              , arabic_number
-                              , pop_directional_isolate
-                              , left_to_right
-                              , pop_directional_isolate
-                              , left_to_right ]))
+                   ?ISOLATES([ arabic_number
+                             , left_to_right_isolate
+                             , right_to_left_isolate
+                             , arabic_number
+                             , pop_directional_isolate
+                             , left_to_right
+                             , pop_directional_isolate
+                             , left_to_right ]))
 ].
 
--undef(PARAGRAPH).
+-undef(ISOLATES).
 
 
--define(PARAGRAPH(Ts),
+-define(EMBEDDING_LEVEL(Ts),
         begin
           PTs = array:from_list(Ts),
-          P0 = #paragraph{initial_types=PTs, result_types=PTs},
-          P1 = determine_matching_isolates(P0),
-          P2 = determine_paragraph_embedding_level(P1),
-          P2#paragraph.embedding_level
+          {MPDI, _} = determine_matching_isolates(PTs),
+          determine_paragraph_embedding_level(PTs, MPDI)
         end).
 
 determine_paragraph_embedding_level_test_() -> [
-     ?_assertMatch(0, ?PARAGRAPH([ left_to_right
-                                 , right_to_left_isolate
-                                 , arabic_number
-                                 , pop_directional_isolate ]))
+     ?_assertMatch(0, ?EMBEDDING_LEVEL([ left_to_right
+                                       , right_to_left_isolate
+                                       , arabic_number
+                                       , pop_directional_isolate ]))
 
-    ,?_assertMatch(1, ?PARAGRAPH([ left_to_right_isolate
-                                 , left_to_right
-                                 , pop_directional_isolate
-                                 , right_to_left ]))
+    ,?_assertMatch(1, ?EMBEDDING_LEVEL([ left_to_right_isolate
+                                       , left_to_right
+                                       , pop_directional_isolate
+                                       , right_to_left ]))
 ].
 
--undef(PARAGRAPH).
+-undef(EMBEDDING_LEVEL).
 
--define(PARAGRAPH(Ts),
+-define(LEVELS(Ts),
         begin
           PTs = array:from_list(Ts),
-          P0 = #paragraph{initial_types=PTs, result_types=PTs},
-          P1 = determine_matching_isolates(P0),
-          P2 = determine_paragraph_embedding_level(P1),
-          P3 = init_embedding_levels(P2),
-          P4 = determine_explicit_embedding_levels(P3),
-          {array:to_list(P4#paragraph.result_types),array:to_list(P4#paragraph.levels)}
+          {MPDI, _} = determine_matching_isolates(PTs),
+          EmbeddingLevel = determine_paragraph_embedding_level(PTs, MPDI),
+          {Ts1, Ls} = determine_explicit_embedding_levels(PTs, EmbeddingLevel, MPDI),
+          {array:to_list(Ts1), array:to_list(Ls)}
         end).
 
 determine_explicit_embedding_levels_test_() -> [
@@ -1423,11 +1380,11 @@ determine_explicit_embedding_levels_test_() -> [
                     , pop_directional_isolate
                     , left_to_right ]
                    ,[0, 0, 2, 0, 0]},
-                   ?PARAGRAPH([ left_to_right
-                              , left_to_right_isolate
-                              , arabic_number
-                              , pop_directional_isolate
-                              , left_to_right ]))
+                   ?LEVELS([ left_to_right
+                           , left_to_right_isolate
+                           , arabic_number
+                           , pop_directional_isolate
+                           , left_to_right ]))
 
     ,?_assertMatch({[ arabic_number
                     , left_to_right_isolate
@@ -1438,15 +1395,15 @@ determine_explicit_embedding_levels_test_() -> [
                     , pop_directional_isolate
                     , left_to_right ]
                    ,[0, 0, 2, 3, 2, 2, 0, 0]},
-                   ?PARAGRAPH([arabic_number
-                              ,left_to_right_isolate
-                              ,right_to_left_isolate
-                              ,arabic_number
-                              ,pop_directional_isolate
-                              ,left_to_right
-                              ,pop_directional_isolate
-                              ,left_to_right
-                              ]))
+                   ?LEVELS([arabic_number
+                           ,left_to_right_isolate
+                           ,right_to_left_isolate
+                           ,arabic_number
+                           ,pop_directional_isolate
+                           ,left_to_right
+                           ,pop_directional_isolate
+                           ,left_to_right
+                           ]))
 
     ,?_assertMatch({[ left_to_right
                     , right_to_left_embedding
@@ -1457,42 +1414,34 @@ determine_explicit_embedding_levels_test_() -> [
                     , pop_directional_format
                     , left_to_right ]
                    ,[0, 1, 1, 2, 2, 2, 1, 0]},
-                   ?PARAGRAPH([ left_to_right
-                              , right_to_left_embedding
-                              , left_to_right
-                              , left_to_right_override
-                              , right_to_left
-                              , pop_directional_format
-                              , pop_directional_format
-                              , left_to_right
-                              ]))
-
+                   ?LEVELS([ left_to_right
+                           , right_to_left_embedding
+                           , left_to_right
+                           , left_to_right_override
+                           , right_to_left
+                           , pop_directional_format
+                           , pop_directional_format
+                           , left_to_right
+                           ]))
 ].
 
--undef(PARAGRAPH).
+-undef(LEVELS).
 
+
+-define(LEVELS(Ls),array:from_list(Ls)).
 
 multiline_reordering_test_() -> [
      ?_assertMatch([1,0,2,4,3,5,6],
-                   multiline_reordering(lv([1,1,0,1,1,0,0]), 0, [7]))
+                   multiline_reordering(?LEVELS([1,1,0,1,1,0,0]), [7]))
 
     ,?_assertMatch([12,13,11,10,9,7,8,6,5,4,3,2,1,0],
-                   multiline_reordering(lv([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [14]))
+                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), [14]))
 
     ,?_assertMatch([6,5,4,3,2,1,0,
                    12,13,11,10,9,7,8],
-                   multiline_reordering(lv([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), 1, [7,14]))
-
-    ,?_assertMatch([11,9,7,6,5,3,1],
-                   multiline_reordering(lv([x,1,x,2,x,1,2,1,x,2,x,1,x]), 0, [13]))
-
-    ,?_assertMatch([6,5,4,2,9,10],
-                   multiline_reordering(lv([x,x,3,x,3,3,3,x,x,2,2,x]), 0, [12]))
-
-    ,?_assertMatch([8,9,10,11,5,4,2],
-                   multiline_reordering(lv([x,x,4,x,3,3,x,x,4,4,4,4]), 1, [12]))
+                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), [7,14]))
 ].
 
-lv(L) -> array:from_list([case V of x -> hide; _ -> V end || V <- L]).
+-undef(LEVELS).
 
 -endif.
