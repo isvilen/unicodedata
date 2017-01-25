@@ -55,10 +55,12 @@
 -type east_asian_width() :: unicodedata_properties:east_asian_width().
 
 
+%% @doc Returns the general category property assigned to the character
 -spec category(char()) -> category().
 category(CP) -> unicodedata_properties:category(CP).
 
 
+%% @doc Returns `true' if character is a letter with case
 -spec is_cased_letter(char()) -> boolean().
 is_cased_letter(CP) ->
     lists:member(category(CP), [ uppercase_letter
@@ -67,6 +69,7 @@ is_cased_letter(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a letter
 -spec is_letter(char()) -> boolean().
 is_letter(CP) ->
     lists:member(category(CP), [ uppercase_letter
@@ -77,6 +80,7 @@ is_letter(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a spacing, monospacing or enclosing mark
 -spec is_mark(char()) -> boolean().
 is_mark(CP) ->
     lists:member(category(CP), [ monospacing_mark
@@ -85,6 +89,7 @@ is_mark(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character represents a number
 -spec is_number(char()) -> boolean().
 is_number(CP) ->
     lists:member(category(CP), [ decimal_number
@@ -93,6 +98,7 @@ is_number(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a punctuation mark
 -spec is_punctuation(char()) -> boolean().
 is_punctuation(CP) ->
     lists:member(category(CP), [ connector_punctuation
@@ -105,6 +111,7 @@ is_punctuation(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a math, currency, modifier or other symbol
 -spec is_symbol(char()) -> boolean().
 is_symbol(CP) ->
     lists:member(category(CP), [ math_symbol
@@ -114,6 +121,7 @@ is_symbol(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a space, line or paragraph separator
 -spec is_separator(char()) -> boolean().
 is_separator(CP) ->
     lists:member(category(CP), [ space_separator
@@ -122,6 +130,7 @@ is_separator(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if character is a control, format, surrogate, unassigned or for private use
 -spec is_other(char()) -> boolean().
 is_other(CP) ->
     lists:member(category(CP), [ control
@@ -132,6 +141,10 @@ is_other(CP) ->
                                ]).
 
 
+%% @doc Returns `true' if codepoint is permanently reserved in the Unicode Standard for internal use
+%%
+%% `66 = length([CP || CP <- lists:seq(0, 16#10FFFF), unicodedata:is_noncharacter(CP)]).'
+%%
 -spec is_noncharacter(char()) -> boolean().
 is_noncharacter(CP) ->
     case category(CP) of
@@ -144,6 +157,7 @@ is_noncharacter(CP) ->
     end.
 
 
+%% @doc Returns `true' if codepoint is currently unassigned
 -spec is_reserved(char()) -> boolean().
 is_reserved(CP) ->
     case category(CP) of
@@ -152,11 +166,12 @@ is_reserved(CP) ->
     end.
 
 
+%% @doc Returns the directional type assigned to the character
 -spec bidirectional_class(char()) -> bidirectional_class().
 bidirectional_class(CP) ->
     unicodedata_bidirectional:bidirectional_class(CP).
 
-
+%% @doc Returns `true' if character has strong bidirectional type
 -spec is_bidirectional_strong(char()) -> boolean().
 is_bidirectional_strong(CP) ->
     lists:member(bidirectional_class(CP), [ left_to_right
@@ -165,6 +180,7 @@ is_bidirectional_strong(CP) ->
                                           ]).
 
 
+%% @doc Returns `true' if character has weak bidirectional type
 -spec is_bidirectional_weak(char()) -> boolean().
 is_bidirectional_weak(CP) ->
     lists:member(bidirectional_class(CP), [ european_number
@@ -177,6 +193,7 @@ is_bidirectional_weak(CP) ->
                                           ]).
 
 
+%% @doc Returns `true' if character has neutral bidirectional type
 -spec is_bidirectional_neutral(char()) -> boolean().
 is_bidirectional_neutral(CP) ->
     lists:member(bidirectional_class(CP), [ paragraph_separator
@@ -186,6 +203,32 @@ is_bidirectional_neutral(CP) ->
                                           ]).
 
 
+%% @doc Returns `true' if character is explicit directional formatting character
+%%
+%% The following characters signal that a piece of text has direction overridden,
+%% treated as embedded or directionally isolated from its surroundings:
+%% <table border="1" summary="explicit directional formatting characters">
+%% <tr><th>Code Point</th><th>Name</th><th>Description</th></tr>
+%% <tr><td>U+202A</td><td>LEFT-TO-RIGHT EMBEDDING</td>
+%%     <td>Treat the following text as embedded left-to-right</td></tr>
+%% <tr><td>U+202B</td><td>RIGHT-TO-LEFT EMBEDDING</td>
+%%     <td>Treat the following text as embedded right-to-left</td></tr>
+%% <tr><td>U+202D</td><td>LEFT-TO-RIGHT OVERRIDE</td>
+%%     <td>Force following characters to be treated as strong left-to-right characters</td></tr>
+%% <tr><td>U+202E</td><td>RIGHT-TO-LEFT OVERRIDE</td>
+%%     <td>Force following characters to be treated as strong right-to-left characters</td></tr>
+%%  <tr><td>U+202C</td><td>POP DIRECTIONAL FORMATTING</td>
+%%     <td>End the scope of the last embedding or overriding</td></tr>
+%%  <tr><td>U+2066</td><td>LEFT-TO-RIGHT ISOLATE</td>
+%%     <td>Treat the following text as isolated and left-to-right</td></tr>
+%%  <tr><td>U+2067</td><td>RIGHT-TO-LEFT ISOLATE</td>
+%%     <td>Treat the following text as isolated and right-to-left</td></tr>
+%%  <tr><td>U+2068</td><td>FIRST STRONG ISOLATE</td>
+%%     <td>Treat the following text as isolated and in the direction of its
+%%         first strong directional character that is not inside a nested isolate</td></tr>
+%%  <tr><td>U+2069</td><td>POP DIRECTIONAL ISOLATE</td>
+%%     <td>End the scope of the last directionally isolated text</td></tr>
+%% </table>
 -spec is_bidirectional_explicit(char()) -> boolean().
 is_bidirectional_explicit(CP) ->
     lists:member(bidirectional_class(CP), [ left_to_right_embedding
@@ -200,69 +243,152 @@ is_bidirectional_explicit(CP) ->
                                           ]).
 
 
+%% @doc Returns `true' if character is identified as a 'mirrored' in bidirectional text
 -spec is_mirrored(char()) -> boolean().
 is_mirrored(CP) ->
     unicodedata_bidirectional:is_mirrored(CP).
 
 
+%% @doc Returns corresponding 'mirrored' character
+%%
+%% ```
+%% $] = unicodedata:mirroring_glyph($[).
+%%
+%% none = unicodedata:mirroring_glyph($a).
+%% '''
 -spec mirroring_glyph(char()) -> char() | none.
 mirroring_glyph(CP) ->
     unicodedata_bidirectional:mirroring_glyph(CP).
 
 
+%% @doc Returns the numeric type and value assigned to the character
+%%
+%% ```
+%% {decimal, 0} = unicodedata:numeric($0).
+%% {numeric, {1,4}} = unicodedata:numeric($¼).
+%% not_a_number = unicodedata:numeric($a).
+%% '''
 -spec numeric(char()) -> {Type, Value} | not_a_number
       when Type :: numeric(),
            Value :: integer() | {integer(), pos_integer()}.
 numeric(CP) -> unicodedata_properties:numeric(CP).
 
 
+%% @doc Returns the numeric value assigned to the character
+%%
+%% ```
+%% 9 = unicodedata:numeric_value($9, -1).
+%% 0.25 = unicodedata:numeric_value($¼, -1).
+%% not_a_number = unicodedata:numeric_value($a, not_a_number).
+%% -1 = unicodedata:numeric_value($a, -1).
+%% '''
 -spec numeric_value(char(), Default) -> number() | Default
       when Default :: number() | not_a_number.
 numeric_value(CP, Default) -> unicodedata_properties:numeric_value(CP, Default).
 
 
+%% @doc Returns the east asian width property assigned to the character
+%%
+%% ```
+%% narrow = unicodedata:east_asian_width($a).
+%% neutral = unicodedata:east_asian_width($\n).
+%% wide = unicodedata:east_asian_width(16#4E00).
+%% '''
 -spec east_asian_width(char()) -> east_asian_width().
 east_asian_width(CP) -> unicodedata_properties:east_asian_width(CP).
 
 
+%% @doc Returns the name assigned to the character
+%%
+%% Equivalent of calling `unicodedata:name(CP, standard)'.
 -spec name(char()) -> binary().
 name(CP) -> unicodedata_name:codepoint_name(CP).
 
+
+%% @doc Returns the name assigned to the character
+%%
+%% `name(CP, standard)' returns the normative character name, as defined
+%% in The Unicode Standard, control codes does not have defined character
+%% names, so `<<>>' is returned.
+%%
+%% `name(CP, display)' returns character name useful for presentation.
+%%
+%% ```
+%% <<>> = unicodedata:name($\r, standard).
+%% <<"<CARRIAGE RETURN>">> = unicodedata:name($\r, display).
+%% '''
 -spec name(char(), standard | display) -> binary().
 name(CP, standard) -> unicodedata_name:codepoint_name(CP);
 name(CP, display)  -> unicodedata_name:codepoint_display_name(CP);
 name(_, _)         -> error(badarg).
 
 
+%% @doc Look up character by name
+%%
+%% ```
+%% $a = unicodedata:lookup(<<"latin small letter a">>).
+%% not_found = unicodedata:lookup(<<"?">>).
+%% '''
 -spec lookup(Name :: binary()) -> char() | not_found.
 lookup(Name) -> unicodedata_name:codepoint_lookup(Name).
 
 
+%% @doc Convert string to uppercase
+%%
+%% `"ABC" = unicodedata:to_uppercase("abc").'
 -spec to_uppercase(string()) -> string().
 to_uppercase(String) ->
     unicodedata_case:to_uppercase(String).
 
 
+%% @doc Convert string to uppercase
+%%
+%% Use special rules for Lithuanian (`<<"lt">>'), Turkish (`<<"tr">>')
+%% and Azeri `<<"az">>' languages.
+%%
+%% ```
+%% [$I, 16#307] = unicodedata:to_uppercase([$i, 16#307], <<"en">>).
+%% [$I]         = unicodedata:to_uppercase([$i, 16#307], <<"lt">>).
+%% '''
 -spec to_uppercase(string(), Lang :: binary()) -> string().
 to_uppercase(String, Lang) ->
     unicodedata_case:to_uppercase(String, Lang).
 
 
+%% @doc Convert string to lowercase
+%%
+%% `"abc" = unicodedata:to_lowercase("ABC").'
 -spec to_lowercase(string()) -> string().
 to_lowercase(String) ->
     unicodedata_case:to_lowercase(String).
 
 
+%% @doc Convert string to lowercase
+%%
+%% Use special rules for Lithuanian (`<<"lt">>'), Turkish (`<<"tr">>')
+%% and Azeri `<<"az">>' languages.
+%%
+%% ```
+%% [$i, 16#0307] = unicodedata:to_lowercase([$I, 16#307], <<"en">>).
+%% [$i]          = unicodedata:to_lowercase([$I, 16#307], <<"tr">>).
+%% '''
 -spec to_lowercase(string(), Lang :: binary()) -> string().
 to_lowercase(String, Lang) ->
     unicodedata_case:to_lowercase(String, Lang).
 
 
+%% @doc Make only first letter of each word capitalized
+%%
+%% `"Abc Def" = unicodedata:to_titlecase("aBc dEf").'
 -spec to_titlecase(string()) -> string().
 to_titlecase(String) ->
     do_titlecase(String, undefined).
 
 
+%% @doc Make only first letter of each word capitalized
+%%
+%% Use special rules for Lithuanian (`<<"lt">>'), Turkish (`<<"tr">>')
+%% and Azeri `<<"az">>' languages.
 -spec to_titlecase(string(), Lang :: binary()) -> string().
 to_titlecase(String, Lang) ->
     do_titlecase(String, Lang).
@@ -276,12 +402,16 @@ do_titlecase(String, Lang) ->
     lists:flatten(lists:reverse(Ws)).
 
 
+%% @doc Transform string into form used for caseless matching
+%%
+%% `"busse" = unicodedata:to_casefold("Buße").'
 -spec to_casefold(string()) -> string().
 to_casefold(String) ->
     Fun = fun (CP, Acc) -> insert(unicodedata_case:case_folding(CP), Acc) end,
     lists:reverse(lists:foldl(Fun, [], String)).
 
 
+%% @doc Transform string into form used for caseless matching of identifiers
 -spec to_nfkc_casefold(string()) -> string().
 to_nfkc_casefold(String) ->
     Fun = fun (CP, Acc) -> insert(unicodedata_case:nfkc_casefold(CP), Acc) end,
@@ -296,11 +426,20 @@ insert_1([], Chars)       -> Chars;
 insert_1([C | Cs], Chars) -> insert_1(Cs, [C | Chars]).
 
 
+%% @doc Compare two strings for case-insensitive equality
+%%
+%% Equivalent of calling `unicodedata:match(String1, String2, default)'.
+%%
+%% `true = unicodedata:match("BUSSE", "Buße").'
 -spec match(string(), string()) -> boolean().
 match(String1, String2) ->
     match(String1, String2, default).
 
 
+%% @doc Compare two strings for case-insensitive equality
+%%
+%% Perform different variants of caseless matching as specified in
+%% The Unicode Standard Section 3.13.
 -spec match(string(), string(), Mode) -> boolean()
       when Mode :: default | canonical | compatibility | identifier.
 match(String1, String2, default) ->
@@ -320,23 +459,49 @@ match(_, _, _) ->
     error:badarg().
 
 
+%% @doc Transform string into normalization form C
+%%
+%% Apply canonical decomposition, then compose pre-combined characters.
+%%
+%% `[$À] = unicodedata:to_nfc([$A, 16#300]).'
 -spec to_nfc(string()) -> string().
 to_nfc(String) -> unicodedata_normalization:normalize(nfc, String).
 
+
+%% @doc Transform string into normalization form KC
+%%
+%% Apply compatibility decomposition, then compose pre-combined characters.
 -spec to_nfkc(string()) -> string().
 to_nfkc(String) -> unicodedata_normalization:normalize(nfkc, String).
 
+
+%% @doc Transform string into normalization form D
+%%
+%% Translates each string character into its decomposed form.
+%%
+%% `[$A, 16#300] = unicodedata:to_nfd([$À]).'
 -spec to_nfd(string()) -> string().
 to_nfd(String) -> unicodedata_normalization:normalize(nfd, String).
 
+
+%% @doc Transform string into normalization form KD
+%%
+%% Translates each string character into its decomposed form using
+%% compatibility decomposition (all compatibility characters are replaced
+%% with their equivalents).
 -spec to_nfkd(string()) -> string().
 to_nfkd(String) -> unicodedata_normalization:normalize(nfkd, String).
 
 
+%% @doc Split string into grapheme clusters
+%%
+%% ``` [[$a, 16#308], [$b]] = unicodedata:graphemes([$a, 16#308, $b]).'''
 -spec graphemes(string()) -> [string()].
 graphemes(String) ->
     lists:reverse(graphemes(fun add_segment/2, [], String)).
 
+
+%% @doc Split string into grapheme clusters
 -spec graphemes(Fun, Acc0, string()) -> Acc1
       when Fun :: fun((Grapheme, AccIn) -> AccOut),
            Grapheme :: string(),
@@ -344,17 +509,21 @@ graphemes(String) ->
            Acc1 :: term(),
            AccIn :: term(),
            AccOut :: term().
-
 graphemes(Fun, Acc0, String) ->
     unicodedata_segmentation:grapheme_breaks(fun (break, Acc) -> Acc;
                                                  (V, Acc)     -> Fun(V, Acc)
                                              end, Acc0, String).
 
 
+%% @doc Split string by word boundaries
+%%
+%% ``` ["ab"," ","cd"] = unicodedata:words("ab cd"). '''
 -spec words(string()) -> [string()].
 words(String) ->
     lists:reverse(words(fun add_segment/2, [], String)).
 
+
+%% @doc Split string by word boundaries
 -spec words(Fun, Acc0, string()) -> Acc1
       when Fun :: fun((Word, AccIn) -> AccOut),
            Word :: string(),
@@ -362,44 +531,50 @@ words(String) ->
            Acc1 :: term(),
            AccIn :: term(),
            AccOut :: term().
-
 words(Fun, Acc0, String) ->
     unicodedata_segmentation:word_breaks(fun (break, Acc) -> Acc;
                                              (V, Acc)     -> Fun(V, Acc)
                                          end, Acc0, String).
 
 
+%% @doc Split string by sentence boundaries
+%%
+%% ``` ["Ab?","Cd."] = unicodedata:sentences("Ab?Cd."). '''
 -spec sentences(string()) -> [string()].
 sentences(String) ->
     lists:reverse(sentences(fun add_segment/2, [], String)).
 
+
+%% @doc Split string by sentence boundaries
 -spec sentences(Fun, Acc0, string()) -> Acc1
-      when Fun :: fun((Word, AccIn) -> AccOut),
-           Word :: string(),
+      when Fun :: fun((Sentence, AccIn) -> AccOut),
+           Sentence :: string(),
            Acc0 :: term(),
            Acc1 :: term(),
            AccIn :: term(),
            AccOut :: term().
-
 sentences(Fun, Acc0, String) ->
     unicodedata_segmentation:sentence_breaks(fun (break, Acc) -> Acc;
                                                  (V, Acc)     -> Fun(V, Acc)
                                              end, Acc0, String).
 
 
-
+%% @doc Split string by line boundaries
+%%
+%% ``` ["a\r\n", "b\n", "c"] = unicodedata:lines("a\r\nb\nc"). '''
 -spec lines(string()) -> [string()].
 lines(String) ->
     lists:reverse(lines(fun add_segment/2, [], String)).
 
+
+%% @doc Split string by line boundaries
 -spec lines(Fun, Acc0, string()) -> Acc1
-      when Fun :: fun((Word, AccIn) -> AccOut),
-           Word :: string(),
+      when Fun :: fun((Line, AccIn) -> AccOut),
+           Line :: string(),
            Acc0 :: term(),
            Acc1 :: term(),
            AccIn :: term(),
            AccOut :: term().
-
 lines(Fun, Acc0, String) ->
     unicodedata_segmentation:line_breaks(fun (break, Acc) -> Acc;
                                              (V, Acc)     -> Fun(V, Acc)
@@ -410,12 +585,48 @@ add_segment(break, Acc) -> Acc;
 add_segment(V, Acc)     -> [V | Acc].
 
 
-
+%% @doc Reorder text within paragraph for display
+%%
+%% Equivalent of calling
+%%
+%% ```unicodedata:reorder(String, [{line_breaks, [length(String)]}
+%%                                ,{hide_explicit_directional_formatting, true}
+%%                                ,{paragraph_direction, default}
+%%                                ,{return, chars}
+%%                                ]).
+%% '''
 -spec reorder(string()) -> string().
 reorder(String) ->
     reorder(String, []).
 
 
+%% @doc Reorder text within paragraph for display
+%%
+%% Execute Unicode Bidirectional Algorithm over a single paragraph as
+%% described in Unicode Standard Annex #9.
+%%
+%% <table border="1" summary="paragraph reorder options">
+%% <tr><th>Option</th><th>Description</th><th>Default</th></tr>
+%% <tr><td>`line_breaks'</td>
+%%     <td>If present the `line_breaks' list must contain at least one value.
+%%         The values must be in strictly increasing order between 1 and the
+%%         length of  the text. The last value must be equal to the length of
+%%         the text.</td>
+%%     <td>single line break at the paragraph end</td></tr>
+%% <tr><td>`hide_explicit_directional_formatting'</td>
+%%     <td>If `true' then remove all explicit directional formatting and
+%%         boundary neutral characters from the result</td>
+%%     <td>`true'</td></tr>
+%% <tr><td>`paragraph_direction'</td>
+%%     <td> If `default' is used then paragraph direction is automatically
+%%          set based of paragraph content</td>
+%%     <td>`default'</td></tr>
+%% <tr><td>`return'</td>
+%%     <td> Determine the function result value:<br/>
+%%         `chars' - reordered characters<br/>
+%%         `indices' - list of 0-based indices into original string</td>
+%%     <td>`chars'</td></tr>
+%% </table>
 -spec reorder(string(), Options) -> string() | [non_neg_integer()]
       when Options :: [ {line_breaks, [non_neg_integer()]}
                       | {hide_explicit_directional_formatting, boolean()}
@@ -430,13 +641,17 @@ reorder(String, Options) ->
             left_to_right ->
                 unicodedata_bidirectional:paragraph(String, 0);
             right_to_left ->
-                unicodedata_bidirectional:paragraph(String, 1)
+                unicodedata_bidirectional:paragraph(String, 1);
+            _ ->
+                error({badarg, paragraph_direction})
         end,
     case proplists:get_value(return, Options, chars) of
         chars ->
             unicodedata_bidirectional:reorder(P, Options);
         indices ->
-            unicodedata_bidirectional:reorder_indices(P, Options)
+            unicodedata_bidirectional:reorder_indices(P, Options);
+        _ ->
+            error({badarg, return})
     end.
 
 
