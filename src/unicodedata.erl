@@ -45,6 +45,8 @@
         , sentences/3
         , lines/1
         , lines/3
+        , reorder/1
+        , reorder/2
         ]).
 
 -type category() :: unicodedata_properties:category().
@@ -408,6 +410,36 @@ add_segment(break, Acc) -> Acc;
 add_segment(V, Acc)     -> [V | Acc].
 
 
+
+-spec reorder(string()) -> string().
+reorder(String) ->
+    reorder(String, []).
+
+
+-spec reorder(string(), Options) -> string() | [non_neg_integer()]
+      when Options :: [ {line_breaks, [non_neg_integer()]}
+                      | {hide_explicit_directional_formatting, boolean()}
+                      | {paragraph_direction, default
+                                            | left_to_right
+                                            | right_to_left}
+                      | {return, chars | indices} ].
+reorder(String, Options) ->
+    P = case proplists:get_value(paragraph_direction, Options, default) of
+            default ->
+                unicodedata_bidirectional:paragraph(String);
+            left_to_right ->
+                unicodedata_bidirectional:paragraph(String, 0);
+            right_to_left ->
+                unicodedata_bidirectional:paragraph(String, 1)
+        end,
+    case proplists:get_value(return, Options, chars) of
+        chars ->
+            unicodedata_bidirectional:reorder(P, Options);
+        indices ->
+            unicodedata_bidirectional:reorder_indices(P, Options)
+    end.
+
+
 -ifdef(TEST).
 -compile({no_auto_import,[is_number/1]}).
 -include_lib("eunit/include/eunit.hrl").
@@ -529,6 +561,22 @@ segmentation_test_() -> [
    ,?_assertEqual(["Ab. ", "Cd\nef"], sentences("Ab. Cd\nef"))
 
    ,?_assertEqual(["a\r\n", "b\n", "c"], lines("a\r\nb\nc"))
+].
+
+reorder_test_() -> [
+    ?_assertEqual([$g, $h, $), $., $], $e, $f, $&, $[, 16#5D3, 16#5D2, $(,
+                  16#5D1, 16#5D0],
+                  reorder([16#5D0, 16#5D1,
+                           $(, 16#5D2, 16#5D3, $[, $&, $e, $f, $], $., $),
+                           $g, $h]))
+
+   ,?_assertEqual([16#5D1, 16#5D0,
+                   $(, 16#5D3, 16#5D2, $[, $&, $e, $f, $], $., $),
+                   $g, $h],
+                  reorder([16#5D0, 16#5D1,
+                           $(, 16#5D2, 16#5D3, $[, $&, $e, $f, $], $., $),
+                           $g, $h],
+                         [{paragraph_direction, left_to_right}]))
 ].
 
 -endif.
