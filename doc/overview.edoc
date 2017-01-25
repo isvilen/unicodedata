@@ -1,0 +1,9 @@
+@title Unicode support library
+
+@doc This library provides access to character properties defined in the
+Unicode Character Database and implements some of the algorithms specified
+in the Unicode 9.0.0 standard.
+
+The public API is provided by the {@link unicodedata} module.
+
+@copyright 2017 Svilen Ivanov
