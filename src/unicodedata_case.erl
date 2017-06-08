@@ -1,5 +1,5 @@
 -module(unicodedata_case).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ is_lowercase/1
         , is_uppercase/1
         , is_cased/1
@@ -17,36 +17,40 @@
 
 -spec is_lowercase(char()) -> boolean().
 is_lowercase(CP) ->
-    ucd_is_category(CP, 'Ll') orelse ucd_has_property(CP, other_lowercase).
+    ucd:category(CP, 'Ll') orelse ucd:prop_list(CP, other_lowercase).
 
 
 -spec is_uppercase(char()) -> boolean().
 is_uppercase(CP) ->
-    ucd_is_category(CP, 'Lu') orelse ucd_has_property(CP, other_uppercase).
+    ucd:category(CP, 'Lu') orelse ucd:prop_list(CP, other_uppercase).
 
 
 -spec is_cased(char()) -> boolean().
 is_cased(CP) ->
-    is_lowercase(CP) orelse is_uppercase(CP) orelse ucd_is_category(CP, 'Lt').
+    is_lowercase(CP) orelse is_uppercase(CP) orelse ucd:category(CP, 'Lt').
 
 
 -spec is_case_ignorable(char()) -> boolean().
 is_case_ignorable(CP) ->
-    ucd_word_break(CP, [mid_letter, mid_num_let, single_quote])
-        orelse ucd_is_category(CP, ['Mn', 'Me', 'Cf', 'Lm', 'Sk']).
+    ucd:word_break_property(CP, [mid_letter, mid_num_let, single_quote])
+        orelse ucd:category(CP, ['Mn', 'Me', 'Cf', 'Lm', 'Sk']).
 
 
 -spec case_folding(char()) -> char() | string().
 case_folding(CP) ->
-    case ucd_case_folding(CP) of
-        undefined -> CP;
-        V         -> V
+    case ucd:full_case_folding(CP) of
+        undefined ->
+            case ucd:common_case_folding(CP) of
+                undefined -> CP;
+                V -> V
+            end;
+        V -> V
     end.
 
 
 -spec nfkc_casefold(char()) -> char() | string().
 nfkc_casefold(CP) ->
-    case ucd_nfkc_casefold(CP) of
+    case ucd:nfkc_casefold(CP) of
         undefined -> CP;
         V         -> V
     end.
@@ -100,7 +104,7 @@ to_titlecase([CP|CPs], Lang, Prefix, Acc0) ->
 
 
 uppercase_mapping(CP, Prefix, Suffix, Lang) ->
-    case ucd_special_casing(CP, upper) of
+    case ucd:special_uppercase(CP) of
         undefined ->
             simple_uppercase_mapping(CP);
         Vs ->
@@ -112,14 +116,14 @@ uppercase_mapping(CP, Prefix, Suffix, Lang) ->
 
 
 simple_uppercase_mapping(CP) ->
-    case ucd_uppercase_mapping(CP) of
+    case ucd:uppercase(CP) of
         undefined -> CP;
         V         -> V
     end.
 
 
 lowercase_mapping(CP, Prefix, Suffix, Lang) ->
-    case ucd_special_casing(CP, lower) of
+    case ucd:special_lowercase(CP) of
         undefined ->
             simple_lowercase_mapping(CP);
         Vs ->
@@ -131,14 +135,14 @@ lowercase_mapping(CP, Prefix, Suffix, Lang) ->
 
 
 simple_lowercase_mapping(CP) ->
-    case ucd_lowercase_mapping(CP) of
+    case ucd:lowercase(CP) of
         undefined -> CP;
         V         -> V
     end.
 
 
 titlecase_mapping(CP, Prefix, Suffix, Lang) ->
-    case ucd_special_casing(CP, title) of
+    case ucd:special_titlecase(CP) of
         undefined ->
             simple_titlecase_mapping(CP);
         Vs ->
@@ -150,7 +154,7 @@ titlecase_mapping(CP, Prefix, Suffix, Lang) ->
 
 
 simple_titlecase_mapping(CP) ->
-    case ucd_titlecase_mapping(CP) of
+    case ucd:titlecase(CP) of
         undefined -> CP;
         V         -> V
     end.
@@ -162,16 +166,16 @@ special_casing(_Prefix, _Suffix, _Lang, []) ->
 special_casing(_Prefix, _Suffix, _Lang, [V | _]) when is_list(V) ->
     V;
 
-special_casing(_Prefix, _Suffix, Lang, [{Lang, V} | _]) ->
+special_casing(_Prefix, _Suffix, Lang, [{[Lang], V} | _]) ->
     V;
 
-special_casing(Prefix, Suffix, Lang, [{{Lang, Ctx},V} | Vs]) ->
+special_casing(Prefix, Suffix, Lang, [{[Lang, Ctx],V} | Vs]) ->
     case special_casing_context(Ctx, Prefix, Suffix) of
         true  -> V;
         false -> special_casing(Prefix, Suffix, Lang, Vs)
     end;
 
-special_casing(Prefix, Suffix, Lang, [{Ctx, V} | Vs]) when is_atom(Ctx) ->
+special_casing(Prefix, Suffix, Lang, [{[Ctx], V} | Vs]) when is_atom(Ctx) ->
     case special_casing_context(Ctx, Prefix, Suffix) of
         true  -> V;
         false -> special_casing(Prefix, Suffix, Lang, Vs)
@@ -194,7 +198,7 @@ special_casing_context(before_dot, _, Suffix) ->
 
 special_casing_context(more_above, _, Suffix) ->
     case skip_combining_classes_other_than_0_and_230(Suffix) of
-        [CP | _] -> ucd_combining_class(CP, 230);
+        [CP | _] -> ucd:combining_class(CP, 230);
         _        -> false
     end;
 
@@ -206,7 +210,7 @@ special_casing_context(after_I, Prefix, _) ->
 
 special_casing_context(after_soft_dotted, Prefix, _) ->
     case skip_combining_classes_other_than_0_and_230(Prefix) of
-        [CP | _] -> ucd_has_property(CP, soft_dotted);
+        [CP | _] -> ucd:prop_list(CP, soft_dotted);
         _        -> false
     end;
 
@@ -259,7 +263,7 @@ skip_combining_classes_other_than_0_and_230([]) ->
     [];
 
 skip_combining_classes_other_than_0_and_230([CP | CPs] = String) ->
-    case ucd_combining_class(CP, not [0, 230]) of
+    case ucd:combining_class(CP, not [0, 230]) of
         true  -> skip_combining_classes_other_than_0_and_230(CPs);
         false -> String
     end.

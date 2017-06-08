@@ -24,18 +24,17 @@ line_breaks_test() ->
 
 run_tests(File, Fun) ->
     TestFun = test_fun(File, Fun),
-    TestFile = test_data_file(File),
-    unicodedata_ucd:fold_lines(TestFun, TestFile, 1, [strip_comment]).
+    test_data:foreach(TestFun, File).
 
 
 test_fun(File, Fun) ->
     AccFun = fun (LineOrBreak, Acc) -> Acc ++ [LineOrBreak] end,
     BreakFun = fun (Text) -> lists:flatten(Fun(AccFun, [], Text)) end,
 
-    fun ([C|_], LineNo) when C == $#; C == $@ ->
-            LineNo + 1;
+    fun ([$@|_], _) ->
+            ok;
         (Line, LineNo) ->
-            Expected = fields(Line),
+            Expected = fields(test_data:strip_comment(Line)),
             Text = [F || F <- Expected, F /= break],
             case BreakFun(Text) of
                 Expected -> ok;
@@ -44,16 +43,8 @@ test_fun(File, Fun) ->
                                                   , {expected, Expected}
                                                   , {actual, Actual}
                                                   ]})
-            end,
-            LineNo + 1
+            end
     end.
-
-
-test_data_file(File) ->
-    {_, _, ModuleFile} = code:get_object_code(?MODULE),
-    Base = filename:dirname(ModuleFile),
-    ZipFile = filename:join([Base, "data", File ++ ".zip"]),
-    {ZipFile, File}.
 
 
 fields(Line) ->
@@ -61,4 +52,4 @@ fields(Line) ->
 
 
 field(<<"÷"/utf8>>) -> break;
-field(Bin)          -> unicodedata_ucd:parse_codepoint(Bin).
+field(Bin)          -> test_data:codepoint(Bin).

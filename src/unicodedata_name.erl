@@ -1,5 +1,5 @@
 -module(unicodedata_name).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ blocks/0
         , block/1
         , codepoint_block/1
@@ -8,17 +8,17 @@
         , codepoint_lookup/1
         ]).
 
--spec blocks() -> [{binary(), {char(), char()}}].
-blocks() -> ucd_blocks().
+-spec blocks() -> [{{char(), char()}, binary()}].
+blocks() -> ucd:blocks().
 
 
 -spec block(Name) -> {char(), char()} | no_block
       when Name :: binary() | string().
 block(Name) when is_binary(Name) ->
-    Blocks = ucd_blocks(),
+    Blocks = ucd:blocks(),
     case lists:keyfind(Name, 1, Blocks) of
-        {_, Range} -> Range;
-        false      -> block(ucd_normalize_name(Name), Blocks)
+        {Range, _} -> Range;
+        false      -> block(ucd:normalize_name(Name), Blocks)
     end;
 
 block(Name) ->
@@ -27,20 +27,24 @@ block(Name) ->
 block(_, []) ->
     no_block;
 
-block(Name, [{Block, Range} | Blocks]) ->
-    case ucd_normalize_name(Block) of
+block(Name, [{Range, Block} | Blocks]) ->
+    case ucd:normalize_name(Block) of
         Name -> Range;
         _    -> block(Name, Blocks)
     end.
 
 
 -spec codepoint_block(char()) -> binary() | no_block.
-codepoint_block(CP) -> ucd_block(CP).
+codepoint_block(CP) ->
+    case ucd:block(CP) of
+        <<"No_Block">> -> no_block;
+        V              -> V
+    end.
 
 
 -spec codepoint_name(char()) -> binary().
 codepoint_name(CP) ->
-    case ucd_codepoint_name(CP) of
+    case ucd:name(CP) of
         undefined ->
             case range_name(CP) of
                 undefined -> <<"">>;
@@ -53,9 +57,9 @@ codepoint_name(CP) ->
 
 -spec codepoint_display_name(char()) -> binary().
 codepoint_display_name(CP) ->
-    case ucd_name_aliases(CP, correction) of
-        [] ->
-            case ucd_codepoint_name(CP) of
+    case ucd:name_aliases(CP, correction) of
+        undefined ->
+            case ucd:name(CP) of
                 undefined ->
                     case range_name(CP) of
                         undefined -> display_name(CP);
@@ -64,16 +68,16 @@ codepoint_display_name(CP) ->
                 Name ->
                     Name
             end;
-        [Name] ->
+        Name ->
             Name
     end.
 
 
 -spec codepoint_lookup(binary()) -> char() | not_found.
 codepoint_lookup(Name) ->
-    case ucd_codepoint_name_lookup(Name) of
+    case ucd:lookup_name(Name) of
         undefined ->
-            case ucd_name_alias_lookup(Name, [correction, abbreviation]) of
+            case ucd:lookup_aliases(Name, [correction, abbreviation]) of
                 undefined ->
                     Tokens = lookup_name_tokens(Name),
                     case range_name_lookup(Tokens) of
@@ -94,7 +98,7 @@ codepoint_lookup(Name) ->
 
 
 range_name(CP) ->
-    case ucd_codepoint_range(CP) of
+    case ucd:range(CP) of
         {cjk_ideograph, _} -> cjk_ideograph_name(CP);
         cjk_ideograph      -> cjk_ideograph_name(CP);
         tangut_ideograph   -> tangut_ideograph_name(CP);
@@ -104,14 +108,14 @@ range_name(CP) ->
 
 
 display_name(CP) ->
-    case ucd_codepoint_range(CP) of
+    case ucd:range(CP) of
         {high_surrogate, _} -> surrogate_name(CP);
         low_surrogate       -> surrogate_name(CP);
         private_use         -> private_use_name(CP);
         {private_use, _}    -> private_use_name(CP);
 
         undefined ->
-            case ucd_is_category(CP, 'Cc') of
+            case ucd:category(CP, 'Cc') of
                 true ->
                     control_name(CP);
                 false when CP >= 16#FDD0, CP =< 16#FDEF ->
@@ -231,9 +235,10 @@ private_use_name(CP) ->
     codepoint_make_display_name(<<"private-use-">>, CP).
 
 control_name(CP) ->
-    case ucd_name_aliases(CP, control) of
-        [Name|_] -> iolist_to_binary([$<,Name,$>]);
-        _        -> codepoint_make_display_name(<<"control-">>, CP)
+    case ucd:name_aliases(CP, control) of
+        undefined -> codepoint_make_display_name(<<"control-">>, CP);
+        [Name|_]  -> iolist_to_binary([$<,Name,$>]);
+        Name      -> iolist_to_binary([$<,Name,$>])
     end.
 
 noncharacter_name(CP) ->
@@ -244,8 +249,8 @@ reserved_name(CP) ->
 
 
 lookup_name_tokens(Name) ->
-    Name1 = string:to_lower(binary_to_list(Name)),
-    string:tokens(Name1, [$\s,$-]).
+    Name1 = string:lowercase(binary_to_list(Name)),
+    string:lexemes(Name1, [$\s,$-]).
 
 
 range_name_lookup(["cjk", "unified", "ideograph", ID]) ->
@@ -253,7 +258,7 @@ range_name_lookup(["cjk", "unified", "ideograph", ID]) ->
         undefined ->
             not_found;
         CP ->
-            case ucd_codepoint_range(CP) of
+            case ucd:range(CP) of
                 {cjk_ideograph, _} -> CP;
                 cjk_ideograph      -> CP;
                 _                  -> not_found
@@ -265,7 +270,7 @@ range_name_lookup(["tangut", "ideograph", ID]) ->
         undefined ->
             not_found;
         CP ->
-            case ucd_codepoint_range(CP) of
+            case ucd:range(CP) of
                 tangut_ideograph   -> CP;
                 _                  -> not_found
             end
@@ -280,7 +285,7 @@ range_name_lookup(_) ->
 
 
 lookup_hangul_syllable(Tokens) ->
-    SYL = iolist_to_binary([string:to_upper(V) || V <- Tokens]),
+    SYL = iolist_to_binary([string:uppercase(V) || V <- Tokens]),
     case lookup_hangul_syllable_L(SYL) of
         {L, SYL1} ->
             case lookup_hangul_syllable_V(SYL1) of
@@ -337,12 +342,12 @@ control_name_lookup(Tokens) ->
             case binary:last(Rest) of
                 $> ->
                     Name = binary:part(Rest, 0, byte_size(Rest)-1),
-                    ucd_name_alias_lookup(Name, control);
+                    ucd:lookup_aliases(Name, control);
                 _ ->
                     undefined
             end;
         Name ->
-            ucd_name_alias_lookup(Name, control)
+            ucd:lookup_aliases(Name, control)
     end.
 
 
@@ -371,7 +376,7 @@ bin_to_hex(String) ->
 -include_lib("eunit/include/eunit.hrl").
 
 blocks_test_() -> [
-    ?_assertMatch([{<<"Basic Latin">>, {0,127}} | _], blocks())
+    ?_assertMatch([{{0,127}, <<"Basic Latin">>} | _], blocks())
    ,?_assertEqual({0,127}, block(<<"Basic Latin">>))
    ,?_assertEqual({16#100, 16#017F}, block("latin extended a"))
    ,?_assertEqual(no_block, block(<<"">>))

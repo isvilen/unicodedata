@@ -1,5 +1,5 @@
 -module(unicodedata_bidirectional).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ bidirectional_class/1
         , is_mirrored/1
         , mirroring_glyph/1
@@ -51,23 +51,52 @@
 
 -spec bidirectional_class(char()) -> bidirectional_class().
 bidirectional_class(CP) ->
-    ucd_bidi_class(CP).
+    case ucd:bidi_class(CP) of
+        'L'   -> left_to_right;
+        'R'   -> right_to_left;
+        'AL'  -> arabic_letter;
+        'EN'  -> european_number;
+        'ES'  -> european_separator;
+        'ET'  -> european_terminator;
+        'AN'  -> arabic_number;
+        'CS'  -> common_separator;
+        'NSM' -> nonspacing_mark;
+        'BN'  -> boundary_neutral;
+        'B'   -> paragraph_separator;
+        'S'   -> segment_separator;
+        'WS'  -> white_space;
+        'ON'  -> other_neutral;
+        'LRE' -> left_to_right_embedding;
+        'LRO' -> left_to_right_override;
+        'RLE' -> right_to_left_embedding;
+        'RLO' -> right_to_left_override;
+        'PDF' -> pop_directional_format;
+        'LRI' -> left_to_right_isolate;
+        'RLI' -> right_to_left_isolate;
+        'FSI' -> first_strong_isolate;
+        'PDI' -> pop_directional_isolate
+    end.
 
 
 -spec is_mirrored(char()) -> boolean().
 is_mirrored(CP) ->
-    ucd_bidi_mirrored(CP).
+    ucd:bidi_mirrored(CP).
 
 
 -spec mirroring_glyph(char()) -> char() | none.
 mirroring_glyph(CP) ->
-    ucd_bidi_mirroring_glyph(CP).
+    case ucd:bidi_mirroring(CP) of
+        undefined -> none;
+        V         -> V
+    end.
 
 
--spec bracket(char()) -> {open, char()} | {close, char()} | none.
+-spec bracket(char()) -> {open, [char()]} | {close, [char()]} | none.
 bracket(CP) ->
-    ucd_bidi_brackets(CP).
-
+    case ucd:bidi_bracket(CP) of
+        undefined -> none;
+        V         -> V
+    end.
 
 -type array(T) :: array:array(T).
 
@@ -120,7 +149,10 @@ embedding_levels({CPs, Types, ParLevel, Levels}, Options) ->
 -spec embedding_level_kind(Level) -> left_to_right | right_to_left
       when Level :: non_neg_integer().
 embedding_level_kind(Level) when is_integer(Level) ->
-    type_for_level(Level).
+    case type_for_level(Level) of
+        'L' -> left_to_right;
+        'R' -> right_to_left
+    end.
 
 
 -spec reorder_indices(paragraph()) -> [non_neg_integer()].
@@ -183,7 +215,7 @@ codepoints(String) ->
 
 
 initial_types(String) ->
-    array:from_list([ucd_bidi_class(CP) || CP <- String]).
+    array:from_list([ucd:bidi_class(CP) || CP <- String]).
 
 
 determine_matching_isolates(Types) ->
@@ -197,9 +229,9 @@ determine_matching_isolates(Idx, Idx, _, MPDI, MII) ->
 
 determine_matching_isolates(Idx, ToIdx, Types, MPDI, MII) ->
     case array:get(Idx, Types) of
-        Type when Type == first_strong_isolate
-                ; Type == left_to_right_isolate
-                ; Type == right_to_left_isolate ->
+        Type when Type == 'FSI'
+                ; Type == 'LRI'
+                ; Type == 'RLI' ->
             determine_matching_isolates_1(Idx, Idx + 1, ToIdx, 1, Types, MPDI, MII);
         _ ->
             determine_matching_isolates(Idx + 1, ToIdx, Types, MPDI, MII)
@@ -212,15 +244,15 @@ determine_matching_isolates_1(StartIdx, ToIdx, ToIdx, _, Types, MPDI, MII) ->
 
 determine_matching_isolates_1(StartIdx, Idx, ToIdx, Depth, Types, MPDI, MII) ->
     case array:get(Idx, Types) of
-        Type when Type == first_strong_isolate
-                ; Type == left_to_right_isolate
-                ; Type == right_to_left_isolate ->
+        Type when Type == 'FSI'
+                ; Type == 'LRI'
+                ; Type == 'RLI' ->
             determine_matching_isolates_1(StartIdx, Idx + 1, ToIdx, Depth + 1, Types, MPDI, MII);
 
-        pop_directional_isolate when Depth > 1 ->
+        'PDI' when Depth > 1 ->
             determine_matching_isolates_1(StartIdx, Idx + 1, ToIdx, Depth - 1, Types, MPDI, MII);
 
-        pop_directional_isolate ->
+        'PDI' ->
             MPDI1 = array:set(StartIdx, Idx, MPDI),
             MII1 = array:set(Idx, StartIdx, MII),
             determine_matching_isolates(StartIdx + 1, ToIdx, Types, MPDI1, MII1);
@@ -239,16 +271,16 @@ find_embedding_level(_, Idx, Idx, _) ->
 
 find_embedding_level(Types, Idx, ToIdx, MatchingPDI) ->
     case array:get(Idx, Types) of
-        left_to_right ->
+        'L' ->
             0;
 
-        Type when Type == right_to_left
-                ; Type == arabic_letter ->
+        Type when Type == 'R'
+                ; Type == 'AL' ->
             1;
 
-        Type when Type == first_strong_isolate
-                ; Type == left_to_right_isolate
-                ; Type == right_to_left_isolate ->
+        Type when Type == 'FSI'
+                ; Type == 'LRI'
+                ; Type == 'RLI' ->
             find_embedding_level(Types, array:get(Idx, MatchingPDI), ToIdx, MatchingPDI);
 
         _ ->
@@ -292,7 +324,7 @@ determine_explicit_embedding_levels(Types, DefaultLevel, MatchingPDI) ->
                   , default_level=DefaultLevel
                   , matching_pdi=MatchingPDI
                   },
-    S1 = ds_push(DefaultLevel, other_neutral, false, S0),
+    S1 = ds_push(DefaultLevel, 'ON', false, S0),
     determine_explicit_embedding_levels_1(0, array:size(Types), S1).
 
 
@@ -306,12 +338,12 @@ determine_explicit_embedding_levels_1(Idx, LastIdx, S0) ->
 
 
 determine_explicit_embedding_levels_2(Idx, Type, S0)
-  when Type == right_to_left_isolate
-     ; Type == left_to_right_isolate
-     ; Type == first_strong_isolate ->
+  when Type == 'RLI'
+     ; Type == 'LRI'
+     ; Type == 'FSI' ->
 
     S1 = case ds_last_override_status(S0) of
-             other_neutral      -> S0;
+             'ON'      -> S0;
              LastOverrideStatus -> ds_set_type(Idx, LastOverrideStatus, S0)
          end,
 
@@ -326,10 +358,10 @@ determine_explicit_embedding_levels_2(Idx, Type, S0)
     end;
 
 determine_explicit_embedding_levels_2(Idx, Type, S0)
-  when Type == right_to_left_embedding
-     ; Type == left_to_right_embedding
-     ; Type == right_to_left_override
-     ; Type == left_to_right_override ->
+  when Type == 'RLE'
+     ; Type == 'LRE'
+     ; Type == 'RLO'
+     ; Type == 'LRO' ->
 
     case ds_next_embedding_level(Idx, Type, S0) of
         Level when ?CHECK_LEVEL(Level,S0) ->
@@ -343,7 +375,7 @@ determine_explicit_embedding_levels_2(Idx, Type, S0)
             end
     end;
 
-determine_explicit_embedding_levels_2(Idx, pop_directional_isolate, S0) ->
+determine_explicit_embedding_levels_2(Idx, 'PDI', S0) ->
     S1 = if
              S0#ds_state.overflow_isolate_count > 0 ->
                  ds_sub_overflow_isolate_count(S0);
@@ -356,7 +388,7 @@ determine_explicit_embedding_levels_2(Idx, pop_directional_isolate, S0) ->
          end,
     ds_set_last_embedding_level(Idx, S1);
 
-determine_explicit_embedding_levels_2(Idx, pop_directional_format, S0) ->
+determine_explicit_embedding_levels_2(Idx, 'PDF', S0) ->
     S1 = ds_set_last_embedding_level(Idx, S0),
     if
         S1#ds_state.overflow_isolate_count > 0 ->
@@ -372,14 +404,14 @@ determine_explicit_embedding_levels_2(Idx, pop_directional_format, S0) ->
             end
     end;
 
-determine_explicit_embedding_levels_2(Idx, paragraph_separator, State) ->
+determine_explicit_embedding_levels_2(Idx, 'B', State) ->
     Level = State#ds_state.default_level,
     State#ds_state{levels = array:set(Idx, Level, State#ds_state.levels)};
 
 determine_explicit_embedding_levels_2(Idx, _, S0) ->
     S1 = ds_set_last_embedding_level(Idx, S0),
     case ds_last_override_status(S1) of
-        other_neutral      -> S1;
+        'ON'      -> S1;
         LastOverrideStatus -> ds_set_type(Idx, LastOverrideStatus, S1)
     end.
 
@@ -390,9 +422,9 @@ ds_push(Level, OverrideType, IsolateStatus, #ds_state{ counter=Counter
                                                      , isolate_status = ISs
                                                      }=S0) ->
     OverrideStatus = case OverrideType of
-                         left_to_right_override -> left_to_right;
-                         right_to_left_override -> right_to_left;
-                         _                      -> other_neutral
+                         'LRO' -> 'L';
+                         'RLO' -> 'R';
+                         _     -> 'ON'
                      end,
     S0#ds_state{ counter = Counter + 1
                , embedding_level = [Level | Ls]
@@ -435,16 +467,16 @@ ds_pop_directional_isolate(S0) ->
 ds_next_embedding_level(Idx, Type, State) ->
     MatchingPDI = State#ds_state.matching_pdi,
     IsRTL = case Type of
-                first_strong_isolate ->
+                'FSI' ->
                     find_embedding_level(State#ds_state.types
                                         ,Idx + 1
                                         ,array:get(Idx, MatchingPDI)
                                         ,MatchingPDI
                                         ) == 1;
-                right_to_left_embedding -> true;
-                right_to_left_override  -> true;
-                right_to_left_isolate   -> true;
-                _                       -> false
+                'RLE' -> true;
+                'RLO' -> true;
+                'RLI' -> true;
+                _     -> false
             end,
     case IsRTL of
         true -> % least greater odd
@@ -499,7 +531,7 @@ process_isolating_run_sequences(CPs, InitialTypes, Types, ParLevel, Levels, MPDI
 
 isolating_run([FirstCh|_]=Run, LevelRuns, RunForCh, InitialTypes, MPDI, MII) ->
     case array:get(FirstCh, InitialTypes) of
-        T when T /= pop_directional_isolate ->
+        T when T /= 'PDI' ->
             isolating_run_1(Run, LevelRuns, RunForCh, InitialTypes, MPDI);
         _ ->
             case array:get(FirstCh, MII) of
@@ -514,9 +546,9 @@ isolating_run([FirstCh|_]=Run, LevelRuns, RunForCh, InitialTypes, MPDI, MII) ->
 isolating_run_1(Run, LevelRuns, RunForCh, InitialTypes, MPDI) ->
     LastCh = lists:last(Run),
     case array:get(LastCh, InitialTypes) of
-        T when T == left_to_right_isolate
-             ; T == right_to_left_isolate
-             ; T == first_strong_isolate ->
+        T when T == 'LRI'
+             ; T == 'RLI'
+             ; T == 'FSI' ->
             MatchingPDI = array:get(LastCh, MPDI),
             TextLength = array:size(InitialTypes),
             if
@@ -548,9 +580,9 @@ prev_level_1(_, _, _, ParLevel, _) ->
 succ_level(Run, Types, InitialTypes, ParLevel, Levels) ->
     LastIdx = lists:last(Run),
     case array:get(LastIdx, Types) of
-        Type when Type == left_to_right_isolate
-                ; Type == right_to_left_isolate
-                ; Type == first_strong_isolate ->
+        Type when Type == 'LRI'
+                ; Type == 'RLI'
+                ; Type == 'FSI' ->
             ParLevel;
         _ ->
             succ_level_1(LastIdx + 1, InitialTypes, ParLevel, Levels)
@@ -650,14 +682,14 @@ resolve_weak_types_w1(Idx, Idx, Types, _) ->
 
 resolve_weak_types_w1(Idx, Size, Types, PrevCharType) ->
     case array:get(Idx, Types) of
-        nonspacing_mark ->
+        'NSM' ->
             Types1 = array:set(Idx, PrevCharType, Types),
             resolve_weak_types_w1(Idx + 1, Size, Types1, PrevCharType);
-        T when T == left_to_right_isolate
-             ; T == right_to_left_isolate
-             ; T == first_strong_isolate
-             ; T == pop_directional_isolate ->
-            resolve_weak_types_w1(Idx + 1, Size, Types, other_neutral);
+        T when T == 'LRI'
+             ; T == 'RLI'
+             ; T == 'FSI'
+             ; T == 'PDI' ->
+            resolve_weak_types_w1(Idx + 1, Size, Types, 'ON');
         T ->
             resolve_weak_types_w1(Idx + 1, Size, Types, T)
     end.
@@ -672,7 +704,7 @@ resolve_weak_types_w2(Idx, Idx, Types) ->
 
 resolve_weak_types_w2(Idx, Size, Types) ->
     case array:get(Idx, Types) of
-        european_number ->
+        'EN' ->
             Types1 = resolve_weak_types_w2_1(Idx, Idx - 1, Types),
             resolve_weak_types_w2(Idx + 1, Size, Types1);
         _ ->
@@ -681,11 +713,11 @@ resolve_weak_types_w2(Idx, Size, Types) ->
 
 resolve_weak_types_w2_1(Idx0, Idx, Types) when Idx >= 0 ->
     case array:get(Idx, Types) of
-        T when T == left_to_right
-             ; T == right_to_left ->
+        T when T == 'L'
+             ; T == 'R' ->
             Types;
-        arabic_letter ->
-            array:set(Idx0, arabic_number, Types);
+        'AL' ->
+            array:set(Idx0, 'AN', Types);
         _ ->
             resolve_weak_types_w2_1(Idx0, Idx - 1, Types)
     end;
@@ -703,8 +735,8 @@ resolve_weak_types_w3(Idx, Idx, Types) ->
 
 resolve_weak_types_w3(Idx, Size, Types) ->
     case array:get(Idx, Types) of
-        arabic_letter ->
-            Types1 = array:set(Idx, right_to_left, Types),
+        'AL' ->
+            Types1 = array:set(Idx, 'R', Types),
             resolve_weak_types_w3(Idx + 1, Size, Types1);
         _ ->
             resolve_weak_types_w3(Idx + 1, Size, Types)
@@ -721,14 +753,14 @@ resolve_weak_types_w4(Idx, End, Types) when Idx >= End ->
 
 resolve_weak_types_w4(Idx, End, Types) ->
     case array:get(Idx, Types) of
-        T when T == european_separator
-             ; T == common_separator ->
+        T when T == 'ES'
+             ; T == 'CS' ->
             Types1 =
                 case {array:get(Idx - 1, Types), array:get(Idx + 1, Types)} of
-                    {european_number, european_number} ->
-                        array:set(Idx, european_number, Types);
-                    {arabic_number, arabic_number} when T == common_separator ->
-                        array:set(Idx, arabic_number, Types);
+                    {'EN', 'EN'} ->
+                        array:set(Idx, 'EN', Types);
+                    {'AN', 'AN'} when T == 'CS' ->
+                        array:set(Idx, 'AN', Types);
                     _ ->
                         Types
                 end,
@@ -747,16 +779,16 @@ resolve_weak_types_w5(Idx, Idx, Types, _, _) ->
 
 resolve_weak_types_w5(Idx, Size, Types, SoS, EoS) ->
     case array:get(Idx, Types) of
-        european_terminator ->
+        'ET' ->
             RunStart = Idx,
-            RunLimit = find_run_limit(RunStart, Size, Types, [european_terminator]),
+            RunLimit = find_run_limit(RunStart, Size, Types, ['ET']),
 
             T0 = case RunStart of
                      0 -> SoS;
                      _ -> array:get(RunStart - 1, Types)
                  end,
             T1 = if
-                     T0 /= european_number ->
+                     T0 /= 'EN' ->
                          case RunLimit of
                              Size -> EoS;
                              _    -> array:get(RunLimit, Types)
@@ -765,8 +797,8 @@ resolve_weak_types_w5(Idx, Size, Types, SoS, EoS) ->
                  end,
 
             Types1 = case T1 of
-                         european_number ->
-                             set_types(RunStart, RunLimit, european_number, Types);
+                         'EN' ->
+                             set_types(RunStart, RunLimit, 'EN', Types);
                          _ ->
                              Types
                      end,
@@ -786,10 +818,10 @@ resolve_weak_types_w6(Idx, Idx, Types) ->
 
 resolve_weak_types_w6(Idx, Size, Types) ->
     case array:get(Idx, Types) of
-        T when T == european_separator
-             ; T == european_terminator
-             ; T == common_separator ->
-            Types1 = array:set(Idx, other_neutral, Types),
+        T when T == 'ES'
+             ; T == 'ET'
+             ; T == 'CS' ->
+            Types1 = array:set(Idx, 'ON', Types),
             resolve_weak_types_w6(Idx + 1, Size, Types1);
         _ ->
             resolve_weak_types_w6(Idx + 1, Size, Types)
@@ -805,10 +837,10 @@ resolve_weak_types_w7(Idx, Idx, Types, _) ->
 
 resolve_weak_types_w7(Idx, Size, Types, SoS) ->
     case array:get(Idx, Types) of
-        european_number ->
+        'EN' ->
             Types1 = case resolve_weak_types_w7_1(Idx - 1, Types, SoS) of
-                         left_to_right -> array:set(Idx, left_to_right, Types);
-                         _             -> Types
+                         'L' -> array:set(Idx, 'L', Types);
+                         _   -> Types
                      end,
             resolve_weak_types_w7(Idx + 1, Size, Types1, SoS);
         _ ->
@@ -817,8 +849,8 @@ resolve_weak_types_w7(Idx, Size, Types, SoS) ->
 
 resolve_weak_types_w7_1(Idx, Types, PrevStrongType) when Idx >= 0 ->
     case array:get(Idx, Types) of
-        T when T == left_to_right
-             ; T == right_to_left -> % // AL's have been changed to R
+        T when T == 'L'
+             ; T == 'R' -> % // AL's have been changed to R
             T;
         _ ->
             resolve_weak_types_w7_1(Idx - 1, Types, PrevStrongType)
@@ -848,13 +880,13 @@ locate_brackets(Indices, Types, CPs) ->
 
 locate_brackets_1(Idx, ChIdx, Types, CPs, Acc) ->
     Ch = array:get(ChIdx, CPs),
-    case ucd_bidi_brackets(Ch) of
-        none ->
+    case ucd:bidi_bracket(Ch) of
+        undefined ->
             Acc;
         Bracket ->
             case array:get(Idx, Types) of
-                other_neutral -> locate_brackets_2(Bracket, Idx, Ch, Acc);
-                _             -> Acc
+                'ON' -> locate_brackets_2(Bracket, Idx, Ch, Acc);
+                _    -> Acc
             end
     end.
 
@@ -892,7 +924,7 @@ resolve_brackets(Brackets, Types, SoS, DirEmbed, Indices, InitialTypes) ->
 
 assign_bracket_type(Bracket, Types, SoS, DirEmbed, Indices, InitialTypes) ->
     case classify_bracket_content(Bracket, Types, DirEmbed) of
-        other_neutral ->
+        'ON' ->
             Types;
         DirEmbed ->
             set_brackets_to_type(Bracket, DirEmbed, Types, Indices, InitialTypes);
@@ -903,14 +935,14 @@ assign_bracket_type(Bracket, Types, SoS, DirEmbed, Indices, InitialTypes) ->
 
 
 classify_bracket_content({OpenIdx, CloseIdx}, Types, DirEmbed) ->
-    classify_bracket_content_1(OpenIdx+1, CloseIdx, Types, DirEmbed, other_neutral).
+    classify_bracket_content_1(OpenIdx+1, CloseIdx, Types, DirEmbed, 'ON').
 
 classify_bracket_content_1(Idx, Idx, _, _, DirOpposite) ->
     DirOpposite;
 
 classify_bracket_content_1(Idx, CloseIdx, Types, DirEmbed, DirOpposite) ->
     case strong_type_n0(array:get(Idx, Types)) of
-        other_neutral ->
+        'ON' ->
             classify_bracket_content_1(Idx + 1, CloseIdx, Types, DirEmbed, DirOpposite);
         DirEmbed ->
             DirEmbed;
@@ -924,8 +956,8 @@ class_before_bracket({Start, _}, Types, SoS) ->
 
 class_before_bracket_1(Idx, Types, SoS) when Idx >= 0 ->
     case strong_type_n0(array:get(Idx, Types)) of
-        other_neutral -> class_before_bracket_1(Idx - 1, Types, SoS);
-        Type          -> Type
+        'ON' -> class_before_bracket_1(Idx - 1, Types, SoS);
+        Type -> Type
     end;
 
 class_before_bracket_1(_, _, SoS) ->
@@ -941,7 +973,7 @@ set_brackets_to_type({OpenIdx, CloseIdx}, Type, Types, Indices, InitialTypes) ->
 set_brackets_nsm(Idx, End, Type, Types, Indices, InitialTypes) when Idx < End ->
     ChIdx = array:get(Idx, Indices),
     case array:get(ChIdx, InitialTypes) of
-        nonspacing_mark ->
+        'NSM' ->
             Types1 = array:set(Idx, Type, Types),
             set_brackets_nsm(Idx + 1, End, Type, Types1, Indices, InitialTypes);
         _ ->
@@ -960,38 +992,38 @@ resolve_neutral_types(Idx, Idx, Types, _, _, _) ->
 
 resolve_neutral_types(Idx, Size, Types0, Level, SoS, EoS) ->
     case array:get(Idx, Types0) of
-        Type when Type == white_space
-                ; Type == other_neutral
-                ; Type == paragraph_separator
-                ; Type == segment_separator
-                ; Type == right_to_left_isolate
-                ; Type == left_to_right_isolate
-                ; Type == first_strong_isolate
-                ; Type == pop_directional_isolate ->
+        Type when Type == 'WS'
+                ; Type == 'ON'
+                ; Type == 'B'
+                ; Type == 'S'
+                ; Type == 'RLI'
+                ; Type == 'LRI'
+                ; Type == 'FSI'
+                ; Type == 'PDI' ->
             RunStart = Idx,
             RunLimit = find_run_limit(RunStart, Size, Types0,
-                                      [ paragraph_separator
-                                      , segment_separator
-                                      , white_space
-                                      , other_neutral
-                                      , right_to_left_isolate
-                                      , left_to_right_isolate
-                                      , first_strong_isolate
-                                      , pop_directional_isolate
+                                      [ 'B'
+                                      , 'S'
+                                      , 'WS'
+                                      , 'ON'
+                                      , 'RLI'
+                                      , 'LRI'
+                                      , 'FSI'
+                                      , 'PDI'
                                       ]),
             LeadingType = case RunStart of
                               0 -> SoS;
                               _ -> case array:get(RunStart - 1, Types0) of
-                                       arabic_number -> right_to_left;
-                                       european_number -> right_to_left;
+                                       'AN' -> 'R';
+                                       'EN' -> 'R';
                                        T1 -> T1
                                    end
                           end,
             TrailingType = case RunLimit of
                                Size -> EoS;
                                _ -> case array:get(RunLimit, Types0) of
-                                       arabic_number -> right_to_left;
-                                       european_number -> right_to_left;
+                                       'AN' -> 'R';
+                                       'EN' -> 'R';
                                        T2 -> T2
                                    end
                            end,
@@ -1014,9 +1046,9 @@ resolve_implicit_levels(Ts, L, Indices, Levels) when (L band 1) == 0 ->
     array:foldl(fun (Idx, Type, Ls) ->
                         OrigIdx = array:get(Idx, Indices),
                         V = case Type of
-                                left_to_right -> L;
-                                right_to_left -> L + 1;
-                                _             -> L + 2
+                                'L' -> L;
+                                'R' -> L + 1;
+                                _   -> L + 2
                             end,
                         array:set(OrigIdx, V, Ls)
                 end,
@@ -1026,8 +1058,8 @@ resolve_implicit_levels(Ts, L, Indices, Levels) ->
     array:foldl(fun (Idx, Type, Ls) ->
                         OrigIdx = array:get(Idx, Indices),
                         V = case Type of
-                                right_to_left -> L;
-                                _             -> L + 1
+                                'R' -> L;
+                                _   -> L + 1
                             end,
                         array:set(OrigIdx, V, Ls)
                 end,
@@ -1054,8 +1086,8 @@ finalize_levels(Idx, Idx, Levels, _, _) ->
 
 finalize_levels(Idx, Size, Levels, Types, ParLevel) ->
     case array:get(Idx, Types) of
-        T when T == paragraph_separator
-             ; T == segment_separator ->
+        T when T == 'B'
+             ; T == 'S' ->
             L1 = array:set(Idx, ParLevel, Levels),
             L2 = finalize_levels_1(Idx - 1, L1, Types, ParLevel),
             finalize_levels(Idx + 1, Size, L2, Types, ParLevel);
@@ -1200,41 +1232,41 @@ reverse_run_1(_, _, Idxs) ->
 
 
 is_removed_by_X9(Type) ->
-           Type == left_to_right_embedding
-    orelse Type == right_to_left_embedding
-    orelse Type == left_to_right_override
-    orelse Type == right_to_left_override
-    orelse Type == pop_directional_format
-    orelse Type == boundary_neutral.
+           Type == 'LRE'
+    orelse Type == 'RLE'
+    orelse Type == 'LRO'
+    orelse Type == 'RLO'
+    orelse Type == 'PDF'
+    orelse Type == 'BN'.
 
 
 is_whitespace(Type) ->
-           Type == left_to_right_embedding
-    orelse Type == right_to_left_embedding
-    orelse Type == left_to_right_override
-    orelse Type == right_to_left_override
-    orelse Type == pop_directional_format
-    orelse Type == boundary_neutral
-    orelse Type == white_space
-    orelse Type == left_to_right_isolate
-    orelse Type == right_to_left_isolate
-    orelse Type == first_strong_isolate
-    orelse Type == pop_directional_isolate.
+           Type == 'LRE'
+    orelse Type == 'RLE'
+    orelse Type == 'LRO'
+    orelse Type == 'RLO'
+    orelse Type == 'PDF'
+    orelse Type == 'BN'
+    orelse Type == 'WS'
+    orelse Type == 'LRI'
+    orelse Type == 'RLI'
+    orelse Type == 'FSI'
+    orelse Type == 'PDI'.
 
 
 type_for_level(Level) ->
     case Level band 1 of
-        0 -> left_to_right;
-        _ -> right_to_left
+        0 -> 'L';
+        _ -> 'R'
     end.
 
 
-strong_type_n0(Type) when Type == european_number
-                        ; Type == arabic_number
-                        ; Type == arabic_letter
-                        ; Type == right_to_left -> right_to_left;
-strong_type_n0(left_to_right) -> left_to_right;
-strong_type_n0(_)             -> other_neutral.
+strong_type_n0(Type) when Type == 'EN'
+                        ; Type == 'AN'
+                        ; Type == 'AL'
+                        ; Type == 'R' -> 'R';
+strong_type_n0('L') -> 'L';
+strong_type_n0(_)   -> 'ON'.
 
 
 find_run_limit(Idx, Idx, _, _) ->
@@ -1316,28 +1348,17 @@ bracket_test_() -> [
 -define(ISOLATES(Ts),
         begin
           {MPDI, MII} = determine_matching_isolates(array:from_list(Ts)),
-          {array:to_list(MPDI), array:to_list(MII)}
+          {array_to_list(MPDI), array_to_list(MII)}
         end).
 
 determine_matching_isolates_test_() -> [
-     ?_assertMatch({[undefined, 3, undefined, undefined, undefined]
-                   ,[undefined, undefined, undefined, 1, undefined]},
-                   ?ISOLATES([ left_to_right
-                             , left_to_right_isolate
-                             , arabic_number
-                             , pop_directional_isolate
-                             , left_to_right ]))
+     ?_assertMatch({         [x,   3,     x,    x,     x]
+                   ,         [x,   x,     x,    1,     x]},
+                   ?ISOLATES(['L', 'LRI', 'AN', 'PDI', 'L']))
 
-    ,?_assertMatch({[undefined,6,4,undefined,undefined,undefined,undefined,undefined]
-                   ,[undefined,undefined,undefined,undefined,2,undefined,1,undefined]},
-                   ?ISOLATES([ arabic_number
-                             , left_to_right_isolate
-                             , right_to_left_isolate
-                             , arabic_number
-                             , pop_directional_isolate
-                             , left_to_right
-                             , pop_directional_isolate
-                             , left_to_right ]))
+    ,?_assertMatch({         [x,    6,     4,     x,    x,     x,   x,     x]
+                   ,         [x,    x,     x,     x,    2,     x,   1,     x]},
+                   ?ISOLATES(['AN', 'LRI', 'RLI', 'AN', 'PDI', 'L', 'PDI', 'L']))
 ].
 
 -undef(ISOLATES).
@@ -1351,15 +1372,9 @@ determine_matching_isolates_test_() -> [
         end).
 
 determine_paragraph_embedding_level_test_() -> [
-     ?_assertMatch(0, ?EMBEDDING_LEVEL([ left_to_right
-                                       , right_to_left_isolate
-                                       , arabic_number
-                                       , pop_directional_isolate ]))
+     ?_assertMatch(0, ?EMBEDDING_LEVEL(['L', 'RLI', 'AN', 'PDI']))
 
-    ,?_assertMatch(1, ?EMBEDDING_LEVEL([ left_to_right_isolate
-                                       , left_to_right
-                                       , pop_directional_isolate
-                                       , right_to_left ]))
+    ,?_assertMatch(1, ?EMBEDDING_LEVEL(['LRI', 'L', 'PDI', 'R']))
 ].
 
 -undef(EMBEDDING_LEVEL).
@@ -1374,73 +1389,37 @@ determine_paragraph_embedding_level_test_() -> [
         end).
 
 determine_explicit_embedding_levels_test_() -> [
-     ?_assertMatch({[ left_to_right
-                    , left_to_right_isolate
-                    , arabic_number
-                    , pop_directional_isolate
-                    , left_to_right ]
-                   ,[0, 0, 2, 0, 0]},
-                   ?LEVELS([ left_to_right
-                           , left_to_right_isolate
-                           , arabic_number
-                           , pop_directional_isolate
-                           , left_to_right ]))
+     ?_assertMatch({       ['L', 'LRI', 'AN', 'PDI', 'L']
+                   ,       [0,   0,     2,    0,     0]},
+                   ?LEVELS(['L', 'LRI', 'AN', 'PDI', 'L']))
 
-    ,?_assertMatch({[ arabic_number
-                    , left_to_right_isolate
-                    , right_to_left_isolate
-                    , arabic_number
-                    , pop_directional_isolate
-                    , left_to_right
-                    , pop_directional_isolate
-                    , left_to_right ]
-                   ,[0, 0, 2, 3, 2, 2, 0, 0]},
-                   ?LEVELS([arabic_number
-                           ,left_to_right_isolate
-                           ,right_to_left_isolate
-                           ,arabic_number
-                           ,pop_directional_isolate
-                           ,left_to_right
-                           ,pop_directional_isolate
-                           ,left_to_right
-                           ]))
+    ,?_assertMatch({       ['AN', 'LRI', 'RLI', 'AN', 'PDI', 'L', 'PDI', 'L']
+                   ,       [0,    0,     2,     3,    2,     2,   0,     0]},
+                   ?LEVELS(['AN' ,'LRI' ,'RLI' ,'AN' ,'PDI' ,'L' ,'PDI' ,'L']))
 
-    ,?_assertMatch({[ left_to_right
-                    , right_to_left_embedding
-                    , left_to_right
-                    , left_to_right_override
-                    , left_to_right
-                    , pop_directional_format
-                    , pop_directional_format
-                    , left_to_right ]
-                   ,[0, 1, 1, 2, 2, 2, 1, 0]},
-                   ?LEVELS([ left_to_right
-                           , right_to_left_embedding
-                           , left_to_right
-                           , left_to_right_override
-                           , right_to_left
-                           , pop_directional_format
-                           , pop_directional_format
-                           , left_to_right
-                           ]))
+    ,?_assertMatch({       ['L', 'RLE', 'L', 'LRO', 'L', 'PDF', 'PDF', 'L']
+                   ,       [0,   1,     1,    2,    2,   2,     1,     0]},
+                   ?LEVELS(['L', 'RLE', 'L', 'LRO', 'R', 'PDF', 'PDF', 'L']))
 ].
 
 -undef(LEVELS).
 
 
--define(LEVELS(Ls),array:from_list(Ls)).
+-define(LEVELS(Ls,Bs),multiline_reordering(array:from_list(Ls),Bs)).
 
 multiline_reordering_test_() -> [
-     ?_assertMatch([1,0,2,4,3,5,6],
-                   multiline_reordering(?LEVELS([1,1,0,1,1,0,0]), [7]))
+     ?_assertMatch(        [1,0,2,4,3,5,6],
+                   ?LEVELS([1,1,0,1,1,0,0], [7]))
 
-    ,?_assertMatch([12,13,11,10,9,7,8,6,5,4,3,2,1,0],
-                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), [14]))
+    ,?_assertMatch(        [12,13,11,10,9,7,8,6,5,4,3,2,1,0],
+                   ?LEVELS([1, 1, 1, 1, 1,1,1,2,2,1,1,1,2,2], [14]))
 
-    ,?_assertMatch([6,5,4,3,2,1,0,
-                   12,13,11,10,9,7,8],
-                   multiline_reordering(?LEVELS([1,1,1,1,1,1,1,2,2,1,1,1,2,2]), [7,14]))
+    ,?_assertMatch(        [6,5,4,3,2,1,0,12,13,11,10,9,7,8],
+                   ?LEVELS([1,1,1,1,1,1,1,2, 2, 1, 1, 1,2,2], [7,14]))
 ].
+
+array_to_list(A) ->
+    [case V of undefined -> x; _ -> V end || V <- array:to_list(A)].
 
 -undef(LEVELS).
 

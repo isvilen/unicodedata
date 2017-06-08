@@ -1,5 +1,5 @@
 -module(unicodedata_segmentation).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ grapheme_breaks/3
         , word_breaks/3
         , sentence_breaks/3
@@ -64,14 +64,14 @@ gb_fold_1(Cs, State) -> gb_start(Cs, State).
 
 
 gb_start([C | Cs], State) ->
-    gb_in(Cs, gws_advance(C, ucd_grapheme_break(C), State)).
+    gb_in(Cs, gws_advance(C, ucd:grapheme_break_property(C), State)).
 
 
 gb_in([], State) ->
     gb_end([], State);
 
 gb_in([C|Cs], #gws_state{prefix=G}=State) ->
-    case ucd_grapheme_break(C) of
+    case ucd:grapheme_break_property(C) of
         lf when hd(G) == cr ->
             gb_end(Cs, gws_advance(C, State));
 
@@ -179,11 +179,11 @@ wb_start([], State) ->
     gws_fini(State);
 
 wb_start([C | Cs], State) ->
-    wb_start_1(Cs, gws_advance(C, ucd_word_break(C), State)).
+    wb_start_1(Cs, gws_advance(C, ucd:word_break_property(C), State)).
 
 
 wb_start_1([C2 | Cs], #gws_state{prefix=[WB1|_]}=State) ->
-    wb_start_2(WB1, ucd_word_break(C2), C2, Cs, State);
+    wb_start_2(WB1, ucd:word_break_property(C2), C2, Cs, State);
 
 wb_start_1([], State) ->
     gws_fini(State).
@@ -206,7 +206,7 @@ wb_start_2(WB1, WB2, C2, Cs, State)  ->
 
 
 wb_in_1([C2 | Cs], #gws_state{prefix=[WB1|_]}=State) ->
-    wb_in_2(WB1, ucd_word_break(C2), C2, Cs, State);
+    wb_in_2(WB1, ucd:word_break_property(C2), C2, Cs, State);
 
 wb_in_1([], State) ->
     gws_fini(State).
@@ -286,7 +286,7 @@ wb_in_ahl_mid_1([], _) ->
     false;
 
 wb_in_ahl_mid_1([C | Cs], State) ->
-    case ucd_word_break(C) of
+    case ucd:word_break_property(C) of
          WB when WB == extend
                ; WB == format
                ; WB == zwj ->
@@ -311,7 +311,7 @@ wb_in_num_mid_1([], _) ->
     false;
 
 wb_in_num_mid_1([C | Cs], State) ->
-    case ucd_word_break(C) of
+    case ucd:word_break_property(C) of
          WB when WB == extend
                ; WB == format
                ; WB == zwj ->
@@ -333,7 +333,7 @@ wb_in_hl_dq_1([], _) ->
     false;
 
 wb_in_hl_dq_1([C | Cs], State) ->
-    case ucd_word_break(C) of
+    case ucd:word_break_property(C) of
          WB when WB == extend
                ; WB == format
                ; WB == zwj ->
@@ -349,7 +349,7 @@ wb_ri([], State) ->
     gws_fini(State);
 
 wb_ri([C|Cs], State) ->
-    case ucd_word_break(C) of
+    case ucd:word_break_property(C) of
         WB when WB == extend
               ; WB == format
               ; WB == zwj ->
@@ -378,11 +378,11 @@ sb_start([], State) ->
     gws_fini(State);
 
 sb_start([C | Cs], State) ->
-    sb_start_1(Cs, gws_advance(C, ucd_sentence_break(C), State)).
+    sb_start_1(Cs, gws_advance(C, ucd:sentence_break_property(C), State)).
 
 
 sb_start_1([C2 | Cs], #gws_state{prefix=[SB1|_]}=State) ->
-    sb_start_2(SB1, ucd_sentence_break(C2), C2, Cs, State);
+    sb_start_2(SB1, ucd:sentence_break_property(C2), C2, Cs, State);
 
 sb_start_1([], State) ->
     gws_fini(State).
@@ -399,7 +399,7 @@ sb_start_2(SB1, SB2, C2, Cs, State)  ->
 
 
 sb_in_1([C2 | Cs], #gws_state{prefix=[SB1 | _]}=State) ->
-    sb_in_2(SB1, ucd_sentence_break(C2), C2, Cs, State);
+    sb_in_2(SB1, ucd:sentence_break_property(C2), C2, Cs, State);
 
 sb_in_1([], State) ->
     gws_fini(State).
@@ -437,7 +437,7 @@ sb_in_2(_, SB2, C2, Cs, State) ->
 
 
 sb_in_ul_a_term([C | Cs], State) ->
-    case ucd_sentence_break(C) of
+    case ucd:sentence_break_property(C) of
         upper = SB ->
             {true, Cs, gws_advance(C, SB, State)};
 
@@ -483,7 +483,7 @@ sb_in_a_term_2(SB1, C1, [C2|Cs], State) when SB1 == extend
                                                   orelse SB1 == lower
                                                   orelse ?ParaSep(SB1)
                                                   orelse ?SATerm(SB1)) ->
-    sb_in_a_term_2(ucd_sentence_break(C2), C2, Cs, gws_advance(C1, State));
+    sb_in_a_term_2(ucd:sentence_break_property(C2), C2, Cs, gws_advance(C1, State));
 
 sb_in_a_term_2(_S, _C, _Cs, _State) ->
     false.
@@ -503,13 +503,13 @@ sb_in_sa_term_1(_, C2, [], State) ->
 
 sb_in_sa_term_1(SB2, C2, [C|Cs], State) when SB2 == s_continue
                                            ; ?SATerm(SB2) ->
-    sb_in_1(Cs, gws_advance(C, ucd_sentence_break(C), gws_advance(C2, State)));
+    sb_in_1(Cs, gws_advance(C, ucd:sentence_break_property(C), gws_advance(C2, State)));
 
 sb_in_sa_term_1(SB2, C2, [C|Cs], State) when ?ParaSep(SB2) ->
-    sb_start_1(Cs, gws_advance(C, ucd_sentence_break(C), gws_add_break(gws_advance(C2, State))));
+    sb_start_1(Cs, gws_advance(C, ucd:sentence_break_property(C), gws_add_break(gws_advance(C2, State))));
 
 sb_in_sa_term_1(_, C2, [C|Cs], State) ->
-    sb_start_1(Cs, gws_advance(C, ucd_sentence_break(C), gws_advance(C2,gws_add_break(State)))).
+    sb_start_1(Cs, gws_advance(C, ucd:sentence_break_property(C), gws_advance(C2,gws_add_break(State)))).
 
 
 sb_skip_close_sp(SB2, C2, Cs, State, ContFun) ->
@@ -527,7 +527,7 @@ sb_skip_close(SB2, C2, [], State, ContFun) ->
 sb_skip_close(SB2, C2, [C | Cs], State, ContFun) when SB2 == close
                                                     ; SB2 == extend
                                                     ; SB2 == format ->
-    sb_skip_close(ucd_sentence_break(C), C, Cs, gws_advance(C2, State), ContFun);
+    sb_skip_close(ucd:sentence_break_property(C), C, Cs, gws_advance(C2, State), ContFun);
 
 sb_skip_close(SB2, C2, Cs, State, ContFun) ->
     sb_skip_sp(SB2, C2, Cs, State, ContFun).
@@ -544,7 +544,7 @@ sb_skip_sp(SB2, C2, [], State, ContFun) ->
 sb_skip_sp(SB2, C2, [C | Cs], State, ContFun) when SB2 == sp
                                                  ; SB2 == extend
                                                  ; SB2 == format ->
-    sb_skip_sp(ucd_sentence_break(C), C, Cs, gws_advance(C2, State), ContFun);
+    sb_skip_sp(ucd:sentence_break_property(C), C, Cs, gws_advance(C2, State), ContFun);
 
 sb_skip_sp(SB2, C2, Cs, State, ContFun) ->
     ContFun(SB2, C2, Cs, State).
@@ -1225,7 +1225,7 @@ lb_rule31(State) ->
 lb_next_class([]) ->
     eot;
 lb_next_class([C|_]) ->
-    case ucd_line_break(C) of
+    case ucd:line_break(C) of
         LB when LB == ai
               ; LB == sg
               ; LB == xx -> al;
@@ -1233,7 +1233,7 @@ lb_next_class([C|_]) ->
         cj -> ns;
 
         sa ->
-            case ucd_is_category(C, ['Mn', 'Mc']) of
+            case ucd:category(C, ['Mn', 'Mc']) of
                 true  -> cm;
                 false -> al
             end;

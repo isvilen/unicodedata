@@ -1,5 +1,5 @@
 -module(unicodedata_normalization).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ quick_check/2
         , normalize/2
         , canonical_decomposition/1
@@ -25,7 +25,7 @@ quick_check_1(_, [], _, Result) ->
     Result;
 
 quick_check_1(Form, [CP | CPs], LastClass, Result) ->
-    case ucd_combining_class(CP) of
+    case ucd:combining_class(CP) of
         Class when LastClass > Class, Class /= 0 -> no;
         Class -> case quick_check_2(Form, CP) of
                      no    -> no;
@@ -34,10 +34,10 @@ quick_check_1(Form, [CP | CPs], LastClass, Result) ->
                  end
     end.
 
-quick_check_2(nfc, CP)  -> ucd_nfc_quick_check(CP);
-quick_check_2(nfkc, CP) -> ucd_nfkc_quick_check(CP);
-quick_check_2(nfd, CP)  -> ucd_nfd_quick_check(CP);
-quick_check_2(nfkd, CP) -> ucd_nfkd_quick_check(CP).
+quick_check_2(nfc, CP)  -> ucd:nfc_quick_check(CP);
+quick_check_2(nfkc, CP) -> ucd:nfkc_quick_check(CP);
+quick_check_2(nfd, CP)  -> ucd:nfd_quick_check(CP);
+quick_check_2(nfkd, CP) -> ucd:nfkd_quick_check(CP).
 
 
 -spec normalize(normalization_form(), string()) -> string().
@@ -111,7 +111,7 @@ canonical_composition_1([], Starter, DecAcc, Acc) ->
     lists:reverse(push([Starter | lists:reverse(DecAcc)], Acc));
 
 canonical_composition_1([CP | CPs], undefined, [], Acc) ->
-    case ucd_combining_class(CP) of
+    case ucd:combining_class(CP) of
         0 -> canonical_composition_1(CPs, CP, [], Acc);
         _ -> canonical_composition_1(CPs, undefined, [], [CP |Acc])
     end;
@@ -119,7 +119,7 @@ canonical_composition_1([CP | CPs], undefined, [], Acc) ->
 canonical_composition_1([CP | CPs], Starter, [], Acc) ->
     case composition(Starter, CP) of
         undefined ->
-            case ucd_combining_class(CP) of
+            case ucd:combining_class(CP) of
                 0 ->
                     canonical_composition_1(CPs, CP, [], [Starter | Acc]);
                 _ ->
@@ -130,8 +130,8 @@ canonical_composition_1([CP | CPs], Starter, [], Acc) ->
     end;
 
 canonical_composition_1([CP | CPs], Starter, [DCP | _] = DecAcc, Acc) ->
-    CP_CCC = ucd_combining_class(CP),
-    DCP_CCC = ucd_combining_class(DCP),
+    CP_CCC = ucd:combining_class(CP),
+    DCP_CCC = ucd:combining_class(DCP),
 
     case DCP_CCC >= CP_CCC of
         true when CP_CCC == 0 ->
@@ -160,7 +160,7 @@ canonical_ordering_1([], Acc1, Acc2) ->
     lists:reverse(canonical_sort(Acc2) ++ Acc1);
 
 canonical_ordering_1([CP | CPs], Acc1, Acc2) ->
-    case ucd_combining_class(CP) of
+    case ucd:combining_class(CP) of
         0 when Acc2 == [] ->
             canonical_ordering_1(CPs, [CP | Acc1], []);
         0 ->
@@ -175,9 +175,9 @@ canonical_sort(Acc) ->
 
 
 decomposition(CP) ->
-    case ucd_decomposition(CP) of
+    case ucd:decomposition(CP) of
         undefined ->
-            case ucd_hangul_syllable_type(CP) of
+            case ucd:hangul_syllable_type(CP) of
                 lv  -> hangul_syllable_decomposition_lv(CP);
                 lvt -> hangul_syllable_decomposition_lvt(CP);
                 _   -> undefined
@@ -188,7 +188,7 @@ decomposition(CP) ->
 
 
 composition(CP1, CP2) ->
-    case ucd_composition(CP1, CP2) of
+    case ucd:composition(CP1, CP2) of
         undefined -> hangul_syllable_composition(CP1, CP2);
         Value     -> Value
     end.
@@ -227,7 +227,7 @@ hangul_syllable_composition(CP1, CP2) when CP1 >= 16#1100, CP1 =< 16#1112
     ?HANGUL_SYLLABLE_BASE + LVIdx;
 
 hangul_syllable_composition(CP1, CP2) ->
-    case ucd_hangul_syllable_type(CP1) of
+    case ucd:hangul_syllable_type(CP1) of
         lv when CP2 >= 16#11a8, CP2 =< 16#11c2 ->
             TIdx = CP2 - ?HANGUL_SYLLABLE_T_BASE,
             CP1 + TIdx;

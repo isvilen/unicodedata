@@ -1,5 +1,5 @@
 -module(unicodedata_properties).
--compile({parse_transform, unicodedata_ucd_transform}).
+-include_lib("ucd/include/ucd.hrl").
 -export([ category/1
         , numeric/1
         , numeric_value/2
@@ -67,7 +67,39 @@
 
 
 -spec category(char()) -> category().
-category(CP) -> ucd_category(CP).
+category(CP) ->
+    case ucd:category(CP) of
+        'Lu' -> uppercase_letter;
+        'Ll' -> lowercase_letter;
+        'Lt' -> titlecase_letter;
+        'Lm' -> modifier_letter;
+        'Lo' -> other_letter;
+        'Mn' -> monospacing_mark;
+        'Mc' -> spacing_mark;
+        'Me' -> enclosing_mark;
+        'Nd' -> decimal_number;
+        'Nl' -> letter_number;
+        'No' -> other_number;
+        'Pc' -> connector_punctuation;
+        'Pd' -> dash_punctuation;
+        'Ps' -> open_punctuation;
+        'Pe' -> close_punctuation;
+        'Pi' -> initial_punctuation;
+        'Pf' -> final_punctuation;
+        'Po' -> other_punctuation;
+        'Sm' -> math_symbol;
+        'Sc' -> currency_symbol;
+        'Sk' -> modifier_symbol;
+        'So' -> other_symbol;
+        'Zs' -> space_separator;
+        'Zl' -> line_separator;
+        'Zp' -> paragraph_separator;
+        'Cc' -> control;
+        'Cf' -> format;
+        'Cs' -> surrogate;
+        'Co' -> private_use;
+        'Cn' -> unassigned
+    end.
 
 
 -spec numeric(char()) -> {Type, Value} | not_a_number
@@ -75,7 +107,7 @@ category(CP) -> ucd_category(CP).
            Value :: integer() | {integer(), pos_integer()}.
 
 numeric(CP) ->
-    case ucd_numeric(CP) of
+    case ucd:numeric(CP) of
         undefined -> not_a_number;
         Value     -> Value
     end.
@@ -84,7 +116,7 @@ numeric(CP) ->
 -spec numeric_value(char(), Default) -> number() | Default
       when Default :: number() | not_a_number.
 numeric_value(CP, Default) ->
-    case ucd_numeric(CP) of
+    case ucd:numeric(CP) of
         undefined     -> Default;
         {_, {V1, V2}} -> V1 / V2;
         {_, V}        -> V
@@ -93,7 +125,7 @@ numeric_value(CP, Default) ->
 
 -spec east_asian_width(char()) -> east_asian_width().
 east_asian_width(CP) ->
-    ucd_east_asian_width(CP).
+    ucd:east_asian_width(CP).
 
 
 -ifdef(TEST).

@@ -139,26 +139,19 @@ normalization_check(LineNo, NormForm, Expected, Data) ->
 
 
 foreach_test_data(Fun) ->
-    unicodedata_ucd:fold_lines(test_fun(Fun), test_data_file(), 1, []).
+    test_data:foreach(test_fun(Fun), ?TEST_DATA).
 
 test_fun(Fun) ->
     {ok, MP} = re:compile(";"),
-    fun ([C|_], LineNo) when C == $#; C == $@ ->
-            LineNo+1;
+    fun ([$@|_], _) ->
+            ok;
         (Line, LineNo) ->
             Fields = re:split(Line, MP),
             [Src, NFC, NFD, NFKC, NFKD | _] = Fields,
             Fun(LineNo
-               ,unicodedata_ucd:parse_codepoints(Src)
-               ,unicodedata_ucd:parse_codepoints(NFC)
-               ,unicodedata_ucd:parse_codepoints(NFD)
-               ,unicodedata_ucd:parse_codepoints(NFKC)
-               ,unicodedata_ucd:parse_codepoints(NFKD)),
-            LineNo+1
+               ,test_data:codepoints(Src)
+               ,test_data:codepoints(NFC)
+               ,test_data:codepoints(NFD)
+               ,test_data:codepoints(NFKC)
+               ,test_data:codepoints(NFKD))
     end.
-
-test_data_file() ->
-    {_, _, ModuleFile} = code:get_object_code(?MODULE),
-    Base = filename:dirname(ModuleFile),
-    ZipFile = filename:join([Base, "data", ?TEST_DATA ++ ".zip"]),
-    {ZipFile, ?TEST_DATA}.
