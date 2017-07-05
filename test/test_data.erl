@@ -11,11 +11,9 @@
         , random/1
         ]).
 
--include_lib("stdlib/include/zip.hrl").
-
 
 foreach(Fun, FileName) ->
-    Data = file(FileName),
+    Data = ucd_db:file(FileName),
     foreach_1(Fun, FileName, 1, binary:split(Data, <<"\n">>)).
 
 
@@ -38,7 +36,7 @@ foreach_2(Fun, FileName, LineNo, Bin) ->
 
 
 fold(Fun, FileName, Acc) ->
-    Data = file(FileName),
+    Data = ucd_db:file(FileName),
     fold_1(Fun, FileName, 1, Acc, Data).
 
 fold_1(_, _, _, Acc, <<>>) ->
@@ -113,19 +111,6 @@ integer(V) ->
 
 random(Vs) ->
     lists:nth(rand:uniform(length(Vs)), Vs).
-
-
-file({ZipFile, File}) -> file(ZipFile, File);
-file(File)            -> file(File, File).
-
-file(ZipFile, File) ->
-    {_, _, ModuleFile} = code:get_object_code(?MODULE),
-    Base = filename:dirname(ModuleFile),
-    ZipFileName = filename:join([Base, "data", ZipFile ++ ".zip"]),
-    case zip:unzip(ZipFileName, [{file_list, [File]}, memory]) of
-        {ok, [{_, Data}]} -> Data;
-        _                 -> error(badarg)
-    end.
 
 
 line(Bin) ->

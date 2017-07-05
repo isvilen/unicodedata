@@ -19,7 +19,7 @@ bidi_test_() -> {timeout, ?TEST_TIMEOUT,
                 bidi_test(Line, File, LineNo, ClassToCP, Levels, Reorder),
                 {Levels, Reorder}
         end
-        ,{"BidiTest", "BidiTest.txt"}
+        ,"BidiTest.txt"
         ,{undefined, undefined})
   end}.
 
@@ -57,7 +57,7 @@ bidi_character_test_() -> {timeout, ?TEST_TIMEOUT,
       test_data:foreach(
         fun (Line, File, LineNo) ->
                 bidi_character_test(Line, File, LineNo, MP)
-        end, {"BidiTest", "BidiCharacterTest.txt"})
+        end, "BidiCharacterTest.txt")
   end}.
 
 

@@ -3,22 +3,22 @@
 
 
 grapheme_breaks_test() ->
-    run_tests("GraphemeBreakTest.txt",
+    run_tests("auxiliary/GraphemeBreakTest.txt",
               fun unicodedata_segmentation:grapheme_breaks/3).
 
 
 word_breaks_test() ->
-    run_tests("WordBreakTest.txt",
+    run_tests("auxiliary/WordBreakTest.txt",
               fun unicodedata_segmentation:word_breaks/3).
 
 
 sentence_breaks_test() ->
-    run_tests("SentenceBreakTest.txt",
+    run_tests("auxiliary/SentenceBreakTest.txt",
               fun unicodedata_segmentation:sentence_breaks/3).
 
 
 line_breaks_test() ->
-    run_tests("LineBreakTest.txt",
+    run_tests("auxiliary/LineBreakTest.txt",
               fun unicodedata_segmentation:line_breaks/3).
 
 
